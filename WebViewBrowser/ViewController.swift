@@ -1,7 +1,6 @@
 import UIKit
 import WebKit
-import SafariServices
-class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UIScrollViewDelegate, SFSafariViewControllerDelegate {
+class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UIScrollViewDelegate {
     // MARK: - 配置项
     private let windowTitles: [String] = ["GitHub", "CF", "Google", "YouTube"]
     private let windowURLs: [String] = [
@@ -22,9 +21,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var webViewContainer: UIView!
     private var progressView: UIProgressView!
     private var panGestures: [UIPanGestureRecognizer] = []
-    /// SFSafariViewController（用于 Apple 登录等需要 Safari 环境的场景）
-    private var safariVC: SFSafariViewController?
-    private var safariOriginURL: URL?
     /// 自定义下拉刷新
     private var refreshViews: [UIView] = []
     private var refreshIndicators: [UIActivityIndicatorView] = []
@@ -187,8 +183,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             webView.navigationDelegate = self
             webView.uiDelegate = self
             webView.allowsBackForwardNavigationGestures = false
-            // 设置 Safari User-Agent，确保 Apple 登录等第三方登录正常
-            webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
             webView.translatesAutoresizingMaskIntoConstraints = false
             webView.scrollView.bounces = true
             webView.scrollView.delegate = self
@@ -643,18 +637,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         if let index = webViews.firstIndex(of: webView) { endCustomRefresh(for: index) }
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        // 检测 Apple 登录：appleid.apple.com 在 WKWebView 中无法正常工作，用 SFSafariViewController 打开
-        if let url = navigationAction.request.url,
-           url.host == "appleid.apple.com" || url.host?.hasSuffix("appleid.apple.com") ?? false {
-            safariOriginURL = webView.url
-            let safari = SFSafariViewController(url: url)
-            safari.delegate = self
-            safari.dismissButtonStyle = .close
-            self.present(safari, animated: true)
-            safariVC = safari
-            decisionHandler(.cancel)
-            return
-        }
         decisionHandler(.allow)
     }
     // MARK: - WKUIDelegate
@@ -664,15 +646,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             webView.load(navigationAction.request)
         }
         return nil
-    }
-    // MARK: - SFSafariViewControllerDelegate（Apple 登录完成后关闭并刷新）
-    func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
-        // 用户关闭 Safari 登录窗口后，刷新当前页面同步登录状态
-        if safariOriginURL != nil {
-            currentWebView.reload()
-        }
-        safariVC = nil
-        safariOriginURL = nil
     }
     deinit {
         for webView in webViews {
