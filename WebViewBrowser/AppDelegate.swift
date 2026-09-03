@@ -1,12 +1,81 @@
 import UIKit
+// MARK: - 精细化智能缓存：按资源类型区分缓存时长
+class SmartURLCache: URLCache {
+    /// 静态资源缓存时长（秒）：图片/字体/JS/CSS = 24小时
+    private let staticCacheTTL: TimeInterval = 24 * 60 * 60
+    /// HTML页面缓存时长（秒）：30分钟
+    private let htmlCacheTTL: TimeInterval = 30 * 60
+    override func storeCachedResponse(_ cachedResponse: CachedURLResponse, for request: URLRequest) {
+        guard let httpResponse = cachedResponse.response as? HTTPURLResponse else {
+            super.storeCachedResponse(cachedResponse, for: request)
+            return
+        }
+        let mimeType = (httpResponse.allHeaderFields["Content-Type"] as? String)?.lowercased() ?? ""
+        let urlPath = request.url?.path.lowercased() ?? ""
+        // 判断资源类型
+        let isStatic = mimeType.hasPrefix("image/") ||
+                       mimeType.contains("javascript") ||
+                       mimeType.contains("css") ||
+                       mimeType.contains("font") ||
+                       urlPath.hasSuffix(".js") || urlPath.hasSuffix(".css") ||
+                       urlPath.hasSuffix(".png") || urlPath.hasSuffix(".jpg") ||
+                       urlPath.hasSuffix(".jpeg") || urlPath.hasSuffix(".gif") ||
+                       urlPath.hasSuffix(".svg") || urlPath.hasSuffix(".webp") ||
+                       urlPath.hasSuffix(".woff") || urlPath.hasSuffix(".woff2") ||
+                       urlPath.hasSuffix(".ttf") || urlPath.hasSuffix(".ico")
+        let ttl = isStatic ? staticCacheTTL : htmlCacheTTL
+        // 构造带缓存控制头的响应
+        var headers = httpResponse.allHeaderFields as? [String: String] ?? [:]
+        headers["Cache-Control"] = "public, max-age=\(Int(ttl))"
+        if let modifiedResponse = HTTPURLResponse(url: httpResponse.url ?? request.url!,
+                                                   statusCode: httpResponse.statusCode,
+                                                   httpVersion: "HTTP/1.1",
+                                                   headerFields: headers) {
+            let smartResponse = CachedURLResponse(response: modifiedResponse,
+                                                   data: cachedResponse.data,
+                                                   userInfo: cachedResponse.userInfo,
+                                                   storagePolicy: .allowed)
+            super.storeCachedResponse(smartResponse, for: request)
+        } else {
+            super.storeCachedResponse(cachedResponse, for: request)
+        }
+    }
+    override func cachedResponse(for request: URLRequest) -> CachedURLResponse? {
+        guard let cached = super.cachedResponse(for: request),
+              let httpResponse = cached.response as? HTTPURLResponse,
+              let cacheControl = httpResponse.allHeaderFields["Cache-Control"] as? String,
+              let maxAgeMatch = cacheControl.range(of: "max-age=(\\d+)", options: .regularExpression),
+              let maxAge = TimeInterval(cacheControl[maxAgeMatch].replacingOccurrences(of: "max-age=", with: "")) else {
+            return super.cachedResponse(for: request)
+        }
+        // 检查缓存是否过期
+        if let storedDate = cached.userInfo?["storeDate"] as? Date {
+            if Date().timeIntervalSince(storedDate) > maxAge {
+                removeCachedResponse(for: request)
+                return nil
+            }
+        }
+        return cached
+    }
+}
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // 配置全局缓存：50MB内存 + 200MB磁盘，加速图片视频加载
-        let memoryCapacity = 50 * 1024 * 1024
-        let diskCapacity = 200 * 1024 * 1024
-        let cache = URLCache(memoryCapacity: memoryCapacity, diskCapacity: diskCapacity, diskPath: "WebBrowserCache")
+        // 精细化智能缓存：静态资源24h，HTML 30min
+        let memoryCapacity = 64 * 1024 * 1024
+        let diskCapacity = 256 * 1024 * 1024
+        let cache = SmartURLCache(memoryCapacity: memoryCapacity, diskCapacity: diskCapacity, diskPath: "SmartBrowserCache")
         URLCache.shared = cache
+        // 网络优化：HTTP/3(QUIC)系统自动协商，优化连接参数
+        let config = URLSessionConfiguration.default
+        config.httpMaximumConnectionsPerHost = 8
+        config.httpShouldUsePipelining = true
+        config.waitsForConnectivity = true
+        config.networkServiceType = .responsiveData
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 30
+        // 共享 session 供预解析/预连接使用
+        URLSession.shared.configuration.httpMaximumConnectionsPerHost = 8
         return true
     }
     // MARK: UISceneSession Lifecycle

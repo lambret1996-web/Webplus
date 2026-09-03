@@ -370,6 +370,51 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             }
         }
     }
+    // MARK: - 广告&追踪拦截（带CF白名单）
+    private func compileAdBlockRules() {
+        // 常见广告/追踪域名，CF相关域名排除
+        let rulesJSON = """
+        [
+          {"trigger":{"url-filter":".*","resource-type":["image","style-sheet","script","font","raw"],"if-domain":["*doubleclick.net","*googleadservices.com","*googlesyndication.com","*googletagmanager.com","*google-analytics.com","*analytics.google.com","*facebook.net","*fbcdn.net","*twitter.com","*ads.twitter.com","*amazon-adsystem.com","*adnxs.com","*criteo.com","*taboola.com","*outbrain.com","*scorecardresearch.com","*quantserve.com","*nr-data.net","*newrelic.com","*hotjar.com","*mouseflow.com","*clarity.ms","*bing.com","*msn.com","*adroll.com","*pubmatic.com","*openx.net","*rubiconproject.com","*casalemedia.com","*exponential.com","*mathtag.com","*advertising.com","*2mdn.net","*2o7.net","*atdmt.com","*falkag.net","*flashtalking.com","*innovid.com","*jivox.com","*kargo.com","*medialand.com","*moatads.com","*narrative.io","*onetag.com","*pixfuture.com","*seedtag.com","*smartadserver.com","*sovrn.com","*taboola.com","*teads.tv","*thetradedesk.com","*triplelift.net","*yieldmo.com","*yieldlab.net","*zemanta.com","*adsrvr.org","*adtechus.com","*advertising.com","*agkn.com","*amgdgt.com","*bluekai.com","*bx1x.com","*chartbeat.com","*chartbeat.net","*comscore.com","*coremetrics.com","*cquotient.com","*crazyegg.com","*criteo.net","*demdex.net","*effectivemeasure.net","*eloqua.com","*episerver.net","*everesttech.net","*exelator.com","*facebook.com","*flashtalking.com","*francisdrake.com","*google.com","*gstatic.com","*heapanalytics.com","*imrworldwide.com","*krxd.net","*lendingtree.com","*liveintent.com","*lnkd.licdn.com","*marketo.com","*maxmind.com","*microsoft.com","*ml314.com","*moat.com","*navegg.com","*nielsen.com","*omtrdc.net","*optimizely.com","*pinterest.com","*px-cloud.net","*quantcast.com","*reddit.com","*retargetly.com","*sailthru.com","*salesforce.com","*serving-sys.com","*sharethrough.com","*simpli.fi","*sitecatalyst.com","*smadex.com","*spotxchange.com","*stickyadstv.com","*tapad.com","*tellapart.com","*tiktok.com","*truste.com","*turn.com","*unrulymedia.com","*veinteractive.com","*vindicosuite.com","*webtrends.com","*wunderkind.co","*yahoo.com","*yandex.ru","*zeotap.com"]},"action":{"type":"block"}},
+          {"trigger":{"url-filter":"dash.cloudflare.com","resource-type":["image","style-sheet","script","font","raw"]},"action":{"type":"ignore-previous-rules"}}
+        ]
+        """
+        WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "AdBlockRules", encodedContentRuleList: rulesJSON) { [weak self] ruleList, error in
+            guard let ruleList = ruleList else {
+                print("广告拦截规则编译失败: \(error?.localizedDescription ?? "未知")")
+                return
+            }
+            DispatchQueue.main.async {
+                for wv in self?.webViews ?? [] {
+                    wv.configuration.userContentController.add(ruleList)
+                }
+            }
+        }
+    }
+    // MARK: - DNS预解析
+    private func prefetchDNS(for urlString: String) {
+        guard let url = URL(string: urlString), let host = url.host else { return }
+        // 使用CFHost异步解析DNS，不阻塞主线程
+        let hostRef = CFHostCreateWithName(kCFAllocatorDefault, host as CFString).takeRetainedValue()
+        var context = CFHostClientContext(version: 0, info: nil, retain: nil, release: nil, copyDescription: nil)
+        CFHostSetClient(hostRef, { (host, typeInfo, error, info) in
+            // DNS解析完成，系统会缓存结果
+        }, &context)
+        CFHostScheduleWithRunLoop(hostRef, CFRunLoopGetCurrent(), .defaultMode)
+        CFHostStartInfoResolution(hostRef, .addresses, nil)
+    }
+    // MARK: - Pre-Connect TCP预连接
+    private func preConnect(for urlString: String) {
+        guard let url = URL(string: urlString), let host = url.host else { return }
+        let port = url.scheme == "https" ? 443 : 80
+        // 使用URLSession streamTask建立TCP/TLS连接，系统会复用连接池
+        let task = URLSession.shared.streamTask(withHostName: host, port: port)
+        task.resume()
+        // 连接建立后立即取消，保留在连接池中
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3) {
+            task.cancel()
+        }
+    }
     @objc private func tabTapped(_ sender: UIButton) {
         switchToTab(index: sender.tag)
     }
@@ -390,6 +435,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         updateProgressView()
         updateTranslateButtonState()
         updateURLField()
+        // DNS预解析 + TCP预连接（加速页面加载）
+        let targetURL = windowURLs[index]
+        prefetchDNS(for: targetURL)
+        preConnect(for: targetURL)
     }
     // MARK: - WebView 容器
     private func setupWebViewContainer() {
@@ -404,11 +453,22 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         ])
     }
     private func setupWebViews() {
+        // 编译广告拦截规则（异步，不阻塞启动）
+        compileAdBlockRules()
         for i in 0..<windowTitles.count {
             let config = WKWebViewConfiguration()
             config.allowsInlineMediaPlayback = true
-            config.mediaTypesRequiringUserActionForPlayback = []
+            // 禁止媒体自动播放（需用户手动点击）
+            config.mediaTypesRequiringUserActionForPlayback = .all
             config.defaultWebpagePreferences.allowsContentJavaScript = true
+            // 持久化数据存储（缓存/cookie）
+            config.websiteDataStore = .default()
+            // 后台动画节流JS：页面不可见时暂停requestAnimationFrame
+            let throttleJS = """
+            (function(){var _raf=window.requestAnimationFrame;var rafQueue=[];document.addEventListener('visibilitychange',function(){if(document.hidden){window.requestAnimationFrame=function(cb){rafQueue.push(cb);return rafQueue.length;};}else{window.requestAnimationFrame=_raf;rafQueue.forEach(function(cb){_raf(cb);});rafQueue=[];}});})();
+            """
+            let throttleScript = WKUserScript(source: throttleJS, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+            config.userContentController.addUserScript(throttleScript)
             let webView = WKWebView(frame: .zero, configuration: config)
             webView.navigationDelegate = self
             webView.uiDelegate = self
@@ -454,6 +514,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         for (index, urlString) in windowURLs.enumerated() {
             guard let url = URL(string: urlString) else { continue }
             webViews[index].load(URLRequest(url: url))
+            // 启动时预解析所有窗口DNS
+            prefetchDNS(for: urlString)
         }
     }
     private var currentWebView: WKWebView {
