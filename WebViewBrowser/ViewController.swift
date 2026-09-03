@@ -6,10 +6,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
         "https://github.com",
         "https://dash.cloudflare.com/"
     ]
-    private let tabBarHeight: CGFloat = 56
-    private let translateButtonSize: CGFloat = 48
+    private let tabBarHeight: CGFloat = 28
+    private let translateButtonSize: CGFloat = 24
     private let maxTranslateSegments = 5000
-    /// 下拉刷新触发距离（默认约60pt，这里设为120pt翻倍，避免误触）
+    /// 下拉刷新触发距离（默认约60pt，设为120pt翻倍，避免误触）
     private let refreshTriggerDistance: CGFloat = 120
     // MARK: - UI 组件
     private var tabBar: UIView!
@@ -19,7 +19,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
     private var webViewContainer: UIView!
     private var progressView: UIProgressView!
     private var panGestures: [UIPanGestureRecognizer] = []
-    /// 自定义下拉刷新视图
+    /// 自定义下拉刷新
     private var refreshViews: [UIView] = []
     private var refreshIndicators: [UIActivityIndicatorView] = []
     private var refreshLabels: [UILabel] = []
@@ -70,7 +70,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
         // 翻译按钮（底层）
         translateButton = UIButton(type: .custom)
         translateButton.setTitle("译", for: .normal)
-        translateButton.titleLabel?.font = .systemFont(ofSize: 20, weight: .bold)
+        translateButton.titleLabel?.font = .systemFont(ofSize: 10, weight: .bold)
         translateButton.backgroundColor = .systemBlue
         translateButton.setTitleColor(.white, for: .normal)
         translateButton.layer.cornerRadius = translateButtonSize / 2
@@ -84,7 +84,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
         // 标签按钮（上层，无背景色）
         let tabLeft = UIButton(type: .system)
         tabLeft.setTitle("GitHub", for: .normal)
-        tabLeft.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+        tabLeft.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
         tabLeft.tag = 0
         tabLeft.backgroundColor = .clear
         tabLeft.setTitleColor(.systemBlue, for: .normal)
@@ -94,7 +94,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
         tabButtons.append(tabLeft)
         let tabRight = UIButton(type: .system)
         tabRight.setTitle("CF", for: .normal)
-        tabRight.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+        tabRight.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
         tabRight.tag = 1
         tabRight.backgroundColor = .clear
         tabRight.setTitleColor(.secondaryLabel, for: .normal)
@@ -103,14 +103,14 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
         tabBar.addSubview(tabRight)
         tabButtons.append(tabRight)
         NSLayoutConstraint.activate([
-            tabLeft.leadingAnchor.constraint(equalTo: tabBar.leadingAnchor, constant: 16),
+            tabLeft.leadingAnchor.constraint(equalTo: tabBar.leadingAnchor, constant: 12),
             tabLeft.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
-            tabLeft.widthAnchor.constraint(equalToConstant: 80),
-            tabLeft.heightAnchor.constraint(equalToConstant: 36),
-            tabRight.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -16),
+            tabLeft.widthAnchor.constraint(equalToConstant: 70),
+            tabLeft.heightAnchor.constraint(equalToConstant: 28),
+            tabRight.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -12),
             tabRight.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
-            tabRight.widthAnchor.constraint(equalToConstant: 80),
-            tabRight.heightAnchor.constraint(equalToConstant: 36),
+            tabRight.widthAnchor.constraint(equalToConstant: 70),
+            tabRight.heightAnchor.constraint(equalToConstant: 28),
             translateButton.centerXAnchor.constraint(equalTo: tabBar.centerXAnchor),
             translateButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             translateButton.widthAnchor.constraint(equalToConstant: translateButtonSize),
@@ -125,10 +125,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
         for (i, button) in tabButtons.enumerated() {
             if i == index {
                 button.setTitleColor(.systemBlue, for: .normal)
-                button.titleLabel?.font = .systemFont(ofSize: 15, weight: .bold)
+                button.titleLabel?.font = .systemFont(ofSize: 14, weight: .bold)
             } else {
                 button.setTitleColor(.secondaryLabel, for: .normal)
-                button.titleLabel?.font = .systemFont(ofSize: 15, weight: .regular)
+                button.titleLabel?.font = .systemFont(ofSize: 14, weight: .regular)
             }
         }
         for (i, webView) in webViews.enumerated() {
@@ -172,7 +172,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
             ])
             webView.addObserver(self, forKeyPath: #keyPath(WKWebView.estimatedProgress), options: .new, context: nil)
             webViews.append(webView)
-            // 自定义下拉刷新视图
             setupCustomRefresh(for: webView, index: i)
         }
     }
@@ -181,6 +180,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
         let refreshView = UIView(frame: CGRect(x: 0, y: -60, width: UIScreen.main.bounds.width, height: 60))
         refreshView.backgroundColor = .clear
         refreshView.autoresizingMask = [.flexibleWidth]
+        refreshView.isHidden = true
         let indicator = UIActivityIndicatorView(style: .medium)
         indicator.center = CGPoint(x: refreshView.bounds.midX - 50, y: refreshView.bounds.midY)
         indicator.hidesWhenStopped = true
@@ -555,23 +555,19 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
         }
     }
     // MARK: - 下载功能（WKDownloadDelegate）
-    /// 判断是否为下载请求
     private func isDownloadResponse(_ response: URLResponse) -> Bool {
         guard let httpResponse = response as? HTTPURLResponse else { return false }
-        // 检查 Content-Disposition: attachment
         if let disposition = httpResponse.allHeaderFields["Content-Disposition"] as? String,
            disposition.lowercased().contains("attachment") {
             return true
         }
-        // WebView 不能直接显示的 MIME 类型
         if let mimeType = response.mimeType, !mimeType.isEmpty {
             let viewableTypes = ["text/html", "text/plain", "application/xhtml+xml", "image/", "video/", "audio/", "application/pdf"]
             let isViewable = viewableTypes.contains { mimeType.lowercased().hasPrefix($0) }
             if !isViewable { return true }
         }
-        // 常见下载文件扩展名
         if let url = response.url, let ext = url.pathExtension.lowercased() as String? {
-            let downloadExts = ["zip", "rar", "7z", "tar", "gz", "dmg", "pkg", "exe", "msi", "deb", "rpm", "apk", "ipa", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "epub", "mobi", "csv", "json", "xml", "txt"]
+            let downloadExts = ["zip", "rar", "7z", "tar", "gz", "dmg", "pkg", "exe", "msi", "deb", "rpm", "apk", "ipa", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "epub", "mobi", "csv", "json", "xml"]
             if downloadExts.contains(ext) { return true }
         }
         return false
