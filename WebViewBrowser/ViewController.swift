@@ -1891,7 +1891,134 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
         return false
     }
-
+    // MARK: - 第三方登录跳转
+    private func handleThirdPartyLogin(url: URL, platform: ThirdPartyPlatform) {
+        let needConfirm = UserDefaults.standard.object(forKey: loginConfirmKey) as? Bool ?? true
+        if !needConfirm {
+            performThirdPartyOpen(url: url, platform: platform)
+            return
+        }
+        showLoginConfirmBar(url: url, platform: platform)
+    }
+    private func showLoginConfirmBar(url: URL, platform: ThirdPartyPlatform) {
+        hideLoginConfirmBar()
+        pendingLoginURL = url
+        pendingLoginPlatform = platform
+        let bar = UIView()
+        bar.backgroundColor = .secondarySystemBackground
+        bar.layer.cornerRadius = 14
+        bar.layer.shadowColor = UIColor.black.cgColor
+        bar.layer.shadowOffset = CGSize(width: 0, height: -2)
+        bar.layer.shadowRadius = 10
+        bar.layer.shadowOpacity = 0.18
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bar)
+        loginConfirmBar = bar
+        let iconView = UIImageView(image: UIImage(systemName: platform.iconName))
+        iconView.tintColor = platform.color
+        iconView.contentMode = .scaleAspectFit
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(iconView)
+        let titleLabel = UILabel()
+        titleLabel.text = "即将跳转至\(platform.name)"
+        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(titleLabel)
+        let subtitleLabel = UILabel()
+        let installed = ThirdPartyLoginManager.shared.isAppInstalled(platform)
+        subtitleLabel.text = installed ? "检测到\(platform.name)App，将唤起App授权" : "未检测到App，将使用网页授权"
+        subtitleLabel.font = .systemFont(ofSize: 12)
+        subtitleLabel.textColor = .secondaryLabel
+        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(subtitleLabel)
+        let cancelBtn = UIButton(type: .system)
+        cancelBtn.setTitle("取消", for: .normal)
+        cancelBtn.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
+        cancelBtn.tintColor = .systemGray
+        cancelBtn.translatesAutoresizingMaskIntoConstraints = false
+        cancelBtn.addTarget(self, action: #selector(cancelLoginRedirect), for: .touchUpInside)
+        bar.addSubview(cancelBtn)
+        let continueBtn = UIButton(type: .system)
+        continueBtn.setTitle("继续跳转", for: .normal)
+        continueBtn.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+        continueBtn.tintColor = .systemBlue
+        continueBtn.translatesAutoresizingMaskIntoConstraints = false
+        continueBtn.addTarget(self, action: #selector(confirmLoginRedirect), for: .touchUpInside)
+        bar.addSubview(continueBtn)
+        NSLayoutConstraint.activate([
+            bar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            bar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            bar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+            bar.heightAnchor.constraint(equalToConstant: 68),
+            iconView.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 14),
+            iconView.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 32),
+            iconView.heightAnchor.constraint(equalToConstant: 32),
+            titleLabel.topAnchor.constraint(equalTo: bar.topAnchor, constant: 10),
+            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 10),
+            titleLabel.trailingAnchor.constraint(equalTo: cancelBtn.leadingAnchor, constant: -8),
+            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2),
+            subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            subtitleLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+            cancelBtn.trailingAnchor.constraint(equalTo: continueBtn.leadingAnchor, constant: -14),
+            cancelBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            cancelBtn.widthAnchor.constraint(equalToConstant: 50),
+            continueBtn.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -14),
+            continueBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            continueBtn.widthAnchor.constraint(equalToConstant: 70),
+        ])
+        bar.transform = CGAffineTransform(translationX: 0, y: 100)
+        UIView.animate(withDuration: 0.3) { bar.transform = .identity }
+    }
+    @objc private func cancelLoginRedirect() {
+        hideLoginConfirmBar()
+        showToast("已取消跳转")
+    }
+    @objc private func confirmLoginRedirect() {
+        guard let url = pendingLoginURL, let platform = pendingLoginPlatform else { return }
+        hideLoginConfirmBar()
+        performThirdPartyOpen(url: url, platform: platform)
+    }
+    private func performThirdPartyOpen(url: URL, platform: ThirdPartyPlatform) {
+        isLoginRedirecting = true
+        showToast("正在跳转至\(platform.name)...")
+        ThirdPartyLoginManager.shared.openApp(url: url) { [weak self] success in
+            DispatchQueue.main.async {
+                self?.isLoginRedirecting = false
+                if success {
+                    self?.showToast("已唤起\(platform.name)")
+                } else {
+                    if let appStoreURL = platform.appStoreURL,
+                       let storeURL = URL(string: appStoreURL) {
+                        let alert = UIAlertController(
+                            title: "未检测到\(platform.name)App",
+                            message: "是否前往App Store下载？或使用网页版授权",
+                            preferredStyle: .alert
+                        )
+                        alert.addAction(UIAlertAction(title: "网页授权", style: .default) { _ in
+                            self?.currentWebView.load(URLRequest(url: url))
+                        })
+                        alert.addAction(UIAlertAction(title: "下载App", style: .default) { _ in
+                            UIApplication.shared.open(storeURL)
+                        })
+                        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+                        self?.present(alert, animated: true)
+                    } else {
+                        self?.currentWebView.load(URLRequest(url: url))
+                    }
+                }
+            }
+        }
+    }
+    private func hideLoginConfirmBar() {
+        guard let bar = loginConfirmBar else { return }
+        UIView.animate(withDuration: 0.2, animations: {
+            bar.transform = CGAffineTransform(translationX: 0, y: 100)
+        }) { _ in bar.removeFromSuperview() }
+        loginConfirmBar = nil
+        pendingLoginURL = nil
+        pendingLoginPlatform = nil
+    }
 
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
         guard gesture.view === currentWebView else { return }
