@@ -259,13 +259,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             break
         }
     }
-    // MARK: - 全局翻译功能（默认英文→中文，一键翻译无需选择）
+    // MARK: - 全局翻译功能（默认英文→中文，双翻译源自动降级，无Google依赖）
     @objc private func translateTapped() {
         if isTranslated[activeIndex] {
-            // 已翻译 → 恢复原文（调用页面内保存的原文恢复函数）
             restoreOriginalText()
         } else {
-            // 未翻译 → 直接注入翻译脚本，默认翻译为中文，无弹窗无选择
             injectTranslateScript()
         }
     }
@@ -278,12 +276,14 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             translateButton.setTitle("译", for: .normal)
         }
     }
-    /// 注入页面翻译脚本：使用 translate.googleapis.com 免费 gtx 端点，自动检测源语言，目标语言固定中文
+    /// 注入页面翻译脚本：双翻译源（MyMemory首选 → 有道降级），自动检测源语言，目标固定中文
     private func injectTranslateScript() {
         let javascript = """
         (function() {
             if (window.__browser_translate_active__) { return; }
             window.__browser_translate_active__ = true;
+
+            // 收集所有可见文本节点
             function collectTextNodes(root) {
                 var nodes = [];
                 var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -308,52 +308,85 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
                 }
                 return nodes;
             }
+
+            // 翻译源1：MyMemory（免费无key，国际通用）
+            function translateMyMemory(text) {
+                var url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=autodetect|zh-CN';
+                return fetch(url, { method: 'GET' })
+                    .then(function(r) { return r.json(); })
+                    .then(function(d) {
+                        if (d && d.responseStatus === 200 && d.responseData && d.responseData.translatedText) {
+                            return d.responseData.translatedText;
+                        }
+                        throw new Error('mymemory_no_result');
+                    });
+            }
+
+            // 翻译源2：有道翻译（免费无key，国内稳定）
+            function translateYoudao(text) {
+                var url = 'https://fanyi.youdao.com/translate?&doctype=json&type=AUTO&i=' + encodeURIComponent(text);
+                return fetch(url, { method: 'GET' })
+                    .then(function(r) { return r.json(); })
+                    .then(function(d) {
+                        if (d && d.errorCode === 0 && d.translateResult && d.translateResult[0]) {
+                            var result = '';
+                            for (var i = 0; i < d.translateResult[0].length; i++) {
+                                if (d.translateResult[0][i] && d.translateResult[0][i].tgt) {
+                                    result += d.translateResult[0][i].tgt;
+                                }
+                            }
+                            if (result) return result;
+                        }
+                        throw new Error('youdao_no_result');
+                    });
+            }
+
+            // 双源自动降级翻译
+            function translateText(text) {
+                return translateMyMemory(text).catch(function() {
+                    return translateYoudao(text);
+                });
+            }
+
             var textNodes = collectTextNodes(document.body);
             if (textNodes.length === 0) {
                 window.__browser_translate_done__ = true;
                 return;
             }
-            var BATCH_SIZE = 80;
-            var batchIndex = 0;
-            function translateNextBatch() {
-                var start = batchIndex * BATCH_SIZE;
-                if (start >= textNodes.length) {
+
+            // 并发控制：同时最多5个翻译请求
+            var CONCURRENT = 5;
+            var currentIndex = 0;
+            var translatedCount = 0;
+
+            function translateNext() {
+                if (currentIndex >= textNodes.length) {
                     window.__browser_translate_done__ = true;
                     return;
                 }
-                var end = Math.min(start + BATCH_SIZE, textNodes.length);
-                var batch = textNodes.slice(start, end);
-                var queryParts = batch.map(function(item) {
-                    return 'q=' + encodeURIComponent(item.textContent.trim());
-                });
-                var url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&' + queryParts.join('&');
-                fetch(url, { method: 'GET' })
-                    .then(function(resp) {
-                        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                        return resp.json();
-                    })
-                    .then(function(data) {
-                        if (data && Array.isArray(data[0])) {
-                            for (var i = 0; i < data[0].length && i < batch.length; i++) {
-                                var seg = data[0][i];
-                                if (seg && seg[0]) {
-                                    if (!batch[i].__browser_orig_text__) {
-                                        batch[i].__browser_orig_text__ = batch[i].textContent;
-                                    }
-                                    batch[i].textContent = seg[0];
-                                }
+                var idx = currentIndex++;
+                var node = textNodes[idx];
+                var text = node.textContent.trim();
+                translateText(text)
+                    .then(function(translated) {
+                        if (translated && translated !== text) {
+                            if (!node.__browser_orig_text__) {
+                                node.__browser_orig_text__ = node.textContent;
                             }
+                            node.textContent = translated;
+                            translatedCount++;
                         }
-                        batchIndex++;
-                        translateNextBatch();
                     })
-                    .catch(function(err) {
-                        console.warn('翻译批次失败:', err);
-                        batchIndex++;
-                        translateNextBatch();
-                    });
+                    .catch(function() { /* 单段失败跳过，不影响其他 */ })
+                    .then(translateNext);
             }
-            translateNextBatch();
+
+            // 启动并发worker
+            for (var w = 0; w < Math.min(CONCURRENT, textNodes.length); w++) {
+                translateNext();
+            }
+
+            // 暴露恢复原文函数
             window.__browser_restore_original__ = function() {
                 var all = document.querySelectorAll('*');
                 for (var i = 0; i < all.length; i++) {
@@ -374,20 +407,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             guard let self = self else { return }
             if let error = error {
                 print("翻译脚本注入失败: \(error.localizedDescription)")
-                self.fallbackTranslate()
+                self.showTranslateToast("翻译启动失败，请重试")
             } else {
                 self.isTranslated[self.activeIndex] = true
                 self.updateTranslateButtonState()
-                // 2.5秒后检查翻译是否真正完成，未完成则触发降级
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
-                    guard let self = self else { return }
-                    self.currentWebView.evaluateJavaScript("window.__browser_translate_done__ === true ? 'done' : 'pending'") { result, _ in
-                        if let status = result as? String, status == "pending" {
-                            print("翻译端点无响应，触发降级方案")
-                            self.fallbackTranslate()
-                        }
-                    }
-                }
             }
         }
     }
@@ -414,16 +437,29 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             }
         }
     }
-    /// 降级方案：通过 Google 翻译网页代理加载整个页面（英→中）
-    private func fallbackTranslate() {
-        guard let currentURL = currentWebView.url?.absoluteString else { return }
-        if currentURL.contains("translate.google.com/translate") { return }
-        let encodedURL = currentURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? currentURL
-        let translateURL = "https://translate.google.com/translate?sl=auto&tl=zh-CN&u=\(encodedURL)"
-        if let url = URL(string: translateURL) {
-            currentWebView.load(URLRequest(url: url))
-            isTranslated[activeIndex] = true
-            updateTranslateButtonState()
+    /// 显示翻译提示（轻量toast，不跳转页面）
+    private func showTranslateToast(_ message: String) {
+        let toast = UILabel()
+        toast.text = message
+        toast.backgroundColor = UIColor.black.withAlphaComponent(0.75)
+        toast.textColor = .white
+        toast.font = .systemFont(ofSize: 14)
+        toast.textAlignment = .center
+        toast.layer.cornerRadius = 8
+        toast.clipsToBounds = true
+        toast.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(toast)
+        NSLayoutConstraint.activate([
+            toast.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            toast.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            toast.widthAnchor.constraint(lessThanOrEqualToConstant: 280),
+            toast.heightAnchor.constraint(equalToConstant: 36)
+        ])
+        toast.alpha = 0
+        UIView.animate(withDuration: 0.25, animations: { toast.alpha = 1 }) { _ in
+            UIView.animate(withDuration: 0.25, delay: 1.5, options: [], animations: { toast.alpha = 0 }) { _ in
+                toast.removeFromSuperview()
+            }
         }
     }
     // MARK: - WKNavigationDelegate
