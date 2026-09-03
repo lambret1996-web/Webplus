@@ -1740,8 +1740,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         currentFindIndex = 0
         totalFindCount = 0
     }
-// MARK: - 下载功能扩展
-extension ViewController {
+    // MARK: - 下载功能
     @objc func downloadButtonTapped() {
         let panel = DownloadPanelViewController()
         panel.modalPresentationStyle = .pageSheet
@@ -1878,7 +1877,7 @@ extension ViewController {
         }
         return false
     }
-}
+
 
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
         guard gesture.view === currentWebView else { return }
