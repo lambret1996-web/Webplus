@@ -651,16 +651,19 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // MARK: - WKUIDelegate
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if navigationAction.targetFrame == nil {
-            // Apple 登录等 OAuth 流程需要 popup，创建临时弹窗
-            showPopupWebView(with: configuration, request: navigationAction.request, originURL: webView.url)
-            return nil
+            // 正确方式：创建新WebView并返回，系统自动加载请求，JS回调/postMessage正常工作
+            let popup = WKWebView(frame: .zero, configuration: configuration)
+            popup.navigationDelegate = self
+            popup.uiDelegate = self
+            popup.customUserAgent = webView.customUserAgent
+            popupOriginURL = webView.url
+            showPopupContainer(with: popup)
+            return popup
         }
         return nil
     }
     // MARK: - Popup 弹窗（Apple 登录 / OAuth）
-    private func showPopupWebView(with configuration: WKWebViewConfiguration, request: URLRequest, originURL: URL?) {
-        popupOriginURL = originURL
-        // 全屏容器
+    private func showPopupContainer(with webView: WKWebView) {
         let container = UIView(frame: view.bounds)
         container.backgroundColor = .systemBackground
         container.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -684,34 +687,29 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         titleLabel.textAlignment = .center
         titleLabel.autoresizingMask = [.flexibleWidth]
         topBar.addSubview(titleLabel)
-        // WebView
-        let popup = WKWebView(frame: CGRect(x: 0, y: 50, width: container.bounds.width, height: container.bounds.height - 50), configuration: configuration)
-        popup.navigationDelegate = self
-        popup.uiDelegate = self
-        popup.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-        popup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        container.addSubview(popup)
-        popupWebView = popup
-        popup.load(request)
+        // WebView（系统自动加载请求）
+        webView.frame = CGRect(x: 0, y: 50, width: container.bounds.width, height: container.bounds.height - 50)
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        container.addSubview(webView)
+        popupWebView = webView
     }
     @objc private func closePopup() {
         popupWebView?.stopLoading()
+        popupWebView?.navigationDelegate = nil
+        popupWebView?.uiDelegate = nil
         popupWebView?.removeFromSuperview()
         popupContainer?.removeFromSuperview()
         popupWebView = nil
         popupContainer = nil
         popupOriginURL = nil
     }
-    /// 检测 popup 登录完成：当 URL 回到原网站域名时自动关闭
+    /// 检测 popup 登录完成：当 URL 回到原网站域名时自动关闭并刷新
     private func checkPopupLoginComplete(url: URL?) {
-        guard let popup = popupWebView, let origin = popupOriginURL, let currentURL = url else { return }
-        // 跳过 about:blank 和登录域名
+        guard let origin = popupOriginURL, let currentURL = url else { return }
         if currentURL.absoluteString == "about:blank" { return }
         if currentURL.host == "appleid.apple.com" { return }
-        // 当 URL 主机与原网站相同或包含原网站域名时，认为登录完成
         if let originHost = origin.host,
-           (currentURL.host == originHost || (currentURL.host?.contains(originHost) ?? false)) {
-            // 登录完成，刷新主 WebView 并关闭弹窗
+           currentURL.host == originHost || (currentURL.host?.contains(originHost) ?? false) {
             currentWebView.reload()
             closePopup()
         }
