@@ -452,7 +452,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         CFHostSetClient(hostRef, { (_, _, _, _) in
             // DNS解析完成，系统会缓存结果
         }, &context)
-        CFHostScheduleWithRunLoop(hostRef, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode)
+        CFHostScheduleWithRunLoop(hostRef, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode)
         CFHostStartInfoResolution(hostRef, .addresses, nil)
     }
     // MARK: - Pre-Connect TCP预连接
