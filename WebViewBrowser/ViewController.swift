@@ -400,56 +400,49 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             }
         }
     }
-    /// 单段翻译：MyMemory → 有道双源降级，URLSession.shared，每请求10秒超时
+    /// 单段翻译：有道翻译（带浏览器请求头），URLSession.shared，每请求10秒超时
     private func translateSingle(_ text: String, completion: @escaping (String?) -> Void) {
         let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
 
-        // 源1：MyMemory
-        guard let url1 = URL(string: "https://api.mymemory.translated.net/get?q=\(encoded)&langpair=autodetect|zh-CN") else {
+        // 有道翻译主端点（修复URL格式，去掉多余的&）
+        guard let url = URL(string: "https://fanyi.youdao.com/translate?doctype=json&type=AUTO&i=\(encoded)") else {
             completion(nil)
             return
         }
-        var req1 = URLRequest(url: url1)
-        req1.timeoutInterval = 10
-        req1.httpMethod = "GET"
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 10
+        req.httpMethod = "GET"
+        // 模拟 iPhone Safari 浏览器请求，避免被有道服务器拒绝
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+        req.setValue("https://fanyi.youdao.com/", forHTTPHeaderField: "Referer")
+        req.setValue("application/json, text/javascript, */*; q=0.01", forHTTPHeaderField: "Accept")
+        req.setValue("zh-CN,zh;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
 
-        URLSession.shared.dataTask(with: req1) { data, _, error in
-            if let data = data, error == nil,
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            // 检查 HTTP 状态码
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                print("有道翻译 HTTP 状态码: \(httpResponse.statusCode)")
+            }
+            if let data = data,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let status = json["responseStatus"] as? Int, status == 200,
-               let respData = json["responseData"] as? [String: Any],
-               let translated = respData["translatedText"] as? String,
-               !translated.isEmpty {
-                completion(translated)
-                return
-            }
-            // 源2：有道翻译
-            guard let url2 = URL(string: "https://fanyi.youdao.com/translate?&doctype=json&type=AUTO&i=\(encoded)") else {
-                completion(nil)
-                return
-            }
-            var req2 = URLRequest(url: url2)
-            req2.timeoutInterval = 10
-            req2.httpMethod = "GET"
-
-            URLSession.shared.dataTask(with: req2) { data, _, _ in
-                if let data = data,
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let code = json["errorCode"] as? Int, code == 0,
-                   let resultArr = json["translateResult"] as? [[[String: Any]]] {
-                    var translated = ""
-                    for seg in resultArr[0] {
-                        if let tgt = seg["tgt"] as? String {
-                            translated += tgt
-                        }
-                    }
-                    if !translated.isEmpty {
-                        completion(translated)
-                        return
+               let code = json["errorCode"] as? Int, code == 0,
+               let resultArr = json["translateResult"] as? [[[String: Any]]] {
+                var translated = ""
+                for seg in resultArr[0] {
+                    if let tgt = seg["tgt"] as? String {
+                        translated += tgt
                     }
                 }
-                completion(nil)
-            }.resume()
+                if !translated.isEmpty {
+                    completion(translated)
+                    return
+                }
+            }
+            // 打印失败原因用于调试
+            if let data = data, let raw = String(data: data, encoding: .utf8) {
+                print("有道翻译返回: \(raw.prefix(200))")
+            }
+            completion(nil)
         }.resume()
     }
     /// 一次性应用翻译结果到页面（TreeWalker只遍历一次，在文本修改前完成所有匹配，避免分批应用时的顺序错乱）
