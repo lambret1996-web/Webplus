@@ -572,12 +572,34 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
         }
         return false
     }
+    /// 检测到下载时弹窗提示，用户确认后才开始下载
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        if isDownloadResponse(navigationResponse.response) {
-            decisionHandler(.download)
+        guard isDownloadResponse(navigationResponse.response) else {
+            decisionHandler(.allow)
             return
         }
-        decisionHandler(.allow)
+        let response = navigationResponse.response
+        let fileName = response.suggestedFilename ?? response.url?.lastPathComponent ?? "未知文件"
+        let fileSize = (response as? HTTPURLResponse)?.expectedContentLength ?? -1
+        let sizeStr: String
+        if fileSize > 0 {
+            sizeStr = ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
+        } else {
+            sizeStr = "未知大小"
+        }
+        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let alert = UIAlertController(
+            title: "下载文件",
+            message: "文件名：\(fileName)\n大小：\(sizeStr)\n保存到：App 文档目录",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "保存", style: .default) { _ in
+            decisionHandler(.download)
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in
+            decisionHandler(.cancel)
+        })
+        self.present(alert, animated: true)
     }
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
         download.delegate = self
@@ -585,35 +607,34 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
         download.delegate = self
     }
-    /// WKDownloadDelegate 必需方法：决定下载文件的临时保存位置
+    /// 直接指定保存到 Documents 目录，避免临时文件移动失败
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
-        let tempDir = FileManager.default.temporaryDirectory
+        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let fileName = suggestedFilename.isEmpty ? "download_\(Int(Date().timeIntervalSince1970))" : suggestedFilename
         let safeFileName = fileName.replacingOccurrences(of: "/", with: "_")
-        completionHandler(tempDir.appendingPathComponent(safeFileName))
+        var finalURL = docsDir.appendingPathComponent(safeFileName)
+        // 文件已存在则自动加序号
+        var counter = 1
+        let ext = finalURL.pathExtension
+        let nameWithoutExt = finalURL.deletingPathExtension().lastPathComponent
+        while FileManager.default.fileExists(atPath: finalURL.path) {
+            if ext.isEmpty {
+                finalURL = docsDir.appendingPathComponent("\(nameWithoutExt)_\(counter)")
+            } else {
+                finalURL = docsDir.appendingPathComponent("\(nameWithoutExt)_\(counter).\(ext)")
+            }
+            counter += 1
+        }
+        completionHandler(finalURL)
     }
     func download(_ download: WKDownload, didFinishDownloadingTo location: URL) {
-        let fileName = download.originalRequest?.url?.lastPathComponent ?? "download_\(Int(Date().timeIntervalSince1970))"
-        let safeFileName = fileName.replacingOccurrences(of: "/", with: "_")
-        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let destination = docsDir.appendingPathComponent(safeFileName)
-        do {
-            if FileManager.default.fileExists(atPath: destination.path) {
-                try FileManager.default.removeItem(at: destination)
-            }
-            try FileManager.default.moveItem(at: location, to: destination)
-            DispatchQueue.main.async {
-                self.showTranslateToast("下载完成: \(safeFileName)")
-            }
-        } catch {
-            DispatchQueue.main.async {
-                self.showTranslateToast("下载保存失败")
-            }
+        DispatchQueue.main.async {
+            self.showTranslateToast("下载完成: \(location.lastPathComponent)")
         }
     }
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         DispatchQueue.main.async {
-            self.showTranslateToast("下载失败")
+            self.showTranslateToast("下载失败: \(error.localizedDescription)")
         }
     }
     // MARK: - WKNavigationDelegate
