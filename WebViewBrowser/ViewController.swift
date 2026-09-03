@@ -1,6 +1,7 @@
 import UIKit
 import WebKit
-class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UIScrollViewDelegate {
+import SafariServices
+class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UIScrollViewDelegate, SFSafariViewControllerDelegate {
     // MARK: - 配置项
     private let windowTitles: [String] = ["GitHub", "CF", "Google", "YouTube"]
     private let windowURLs: [String] = [
@@ -21,10 +22,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var webViewContainer: UIView!
     private var progressView: UIProgressView!
     private var panGestures: [UIPanGestureRecognizer] = []
-    /// Popup 弹窗（用于 Apple 登录等 OAuth 流程）
-    private var popupContainer: UIView?
-    private var popupWebView: WKWebView?
-    private var popupOriginURL: URL?
+    /// SFSafariViewController（用于 Apple 登录等需要 Safari 环境的场景）
+    private var safariVC: SFSafariViewController?
+    private var safariOriginURL: URL?
     /// 自定义下拉刷新
     private var refreshViews: [UIView] = []
     private var refreshIndicators: [UIActivityIndicatorView] = []
@@ -587,6 +587,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // MARK: - 下载功能（跳转默认浏览器）
     private func isDownloadResponse(_ response: URLResponse) -> Bool {
         guard let httpResponse = response as? HTTPURLResponse else { return false }
+        // HTML 页面一律不认为是下载（避免登录页面等被误判）
+        if let mimeType = response.mimeType, mimeType.lowercased().contains("text/html") { return false }
         if let disposition = httpResponse.allHeaderFields["Content-Disposition"] as? String,
            disposition.lowercased().contains("attachment") {
             return true
@@ -597,7 +599,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             if !isViewable { return true }
         }
         if let url = response.url, let ext = url.pathExtension.lowercased() as String? {
-            let downloadExts = ["zip", "rar", "7z", "tar", "gz", "dmg", "pkg", "exe", "msi", "deb", "rpm", "apk", "ipa", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "epub", "mobi", "csv", "json", "xml"]
+            let downloadExts = ["zip", "rar", "7z", "tar", "gz", "dmg", "pkg", "exe", "msi", "deb", "rpm", "apk", "ipa", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "epub", "mobi", "csv"]
             if downloadExts.contains(ext) { return true }
         }
         return false
@@ -627,11 +629,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     // MARK: - WKNavigationDelegate
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // Popup 登录完成检测
-        if webView === popupWebView {
-            checkPopupLoginComplete(url: webView.url)
-            return
-        }
         if let index = webViews.firstIndex(of: webView) {
             endCustomRefresh(for: index)
             isTranslated[index] = false
@@ -646,73 +643,36 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         if let index = webViews.firstIndex(of: webView) { endCustomRefresh(for: index) }
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // 检测 Apple 登录：appleid.apple.com 在 WKWebView 中无法正常工作，用 SFSafariViewController 打开
+        if let url = navigationAction.request.url,
+           url.host == "appleid.apple.com" || url.host?.hasSuffix("appleid.apple.com") ?? false {
+            safariOriginURL = webView.url
+            let safari = SFSafariViewController(url: url)
+            safari.delegate = self
+            safari.dismissButtonStyle = .close
+            self.present(safari, animated: true)
+            safariVC = safari
+            decisionHandler(.cancel)
+            return
+        }
         decisionHandler(.allow)
     }
     // MARK: - WKUIDelegate
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        // target=_blank 链接在当前 WebView 打开
         if navigationAction.targetFrame == nil {
-            // 正确方式：创建新WebView并返回，系统自动加载请求，JS回调/postMessage正常工作
-            let popup = WKWebView(frame: .zero, configuration: configuration)
-            popup.navigationDelegate = self
-            popup.uiDelegate = self
-            popup.customUserAgent = webView.customUserAgent
-            popupOriginURL = webView.url
-            showPopupContainer(with: popup)
-            return popup
+            webView.load(navigationAction.request)
         }
         return nil
     }
-    // MARK: - Popup 弹窗（Apple 登录 / OAuth）
-    private func showPopupContainer(with webView: WKWebView) {
-        let container = UIView(frame: view.bounds)
-        container.backgroundColor = .systemBackground
-        container.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(container)
-        popupContainer = container
-        // 顶部工具栏
-        let topBar = UIView(frame: CGRect(x: 0, y: 0, width: container.bounds.width, height: 50))
-        topBar.backgroundColor = .secondarySystemBackground
-        topBar.autoresizingMask = [.flexibleWidth]
-        container.addSubview(topBar)
-        let closeBtn = UIButton(type: .system)
-        closeBtn.setTitle("关闭", for: .normal)
-        closeBtn.titleLabel?.font = .systemFont(ofSize: 16, weight: .medium)
-        closeBtn.frame = CGRect(x: container.bounds.width - 70, y: 10, width: 60, height: 30)
-        closeBtn.autoresizingMask = [.flexibleLeftMargin]
-        closeBtn.addTarget(self, action: #selector(closePopup), for: .touchUpInside)
-        topBar.addSubview(closeBtn)
-        let titleLabel = UILabel(frame: CGRect(x: 60, y: 10, width: container.bounds.width - 140, height: 30))
-        titleLabel.text = "登录验证"
-        titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
-        titleLabel.textAlignment = .center
-        titleLabel.autoresizingMask = [.flexibleWidth]
-        topBar.addSubview(titleLabel)
-        // WebView（系统自动加载请求）
-        webView.frame = CGRect(x: 0, y: 50, width: container.bounds.width, height: container.bounds.height - 50)
-        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        container.addSubview(webView)
-        popupWebView = webView
-    }
-    @objc private func closePopup() {
-        popupWebView?.stopLoading()
-        popupWebView?.navigationDelegate = nil
-        popupWebView?.uiDelegate = nil
-        popupWebView?.removeFromSuperview()
-        popupContainer?.removeFromSuperview()
-        popupWebView = nil
-        popupContainer = nil
-        popupOriginURL = nil
-    }
-    /// 检测 popup 登录完成：当 URL 回到原网站域名时自动关闭并刷新
-    private func checkPopupLoginComplete(url: URL?) {
-        guard let origin = popupOriginURL, let currentURL = url else { return }
-        if currentURL.absoluteString == "about:blank" { return }
-        if currentURL.host == "appleid.apple.com" { return }
-        if let originHost = origin.host,
-           currentURL.host == originHost || (currentURL.host?.contains(originHost) ?? false) {
+    // MARK: - SFSafariViewControllerDelegate（Apple 登录完成后关闭并刷新）
+    func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
+        // 用户关闭 Safari 登录窗口后，刷新当前页面同步登录状态
+        if safariOriginURL != nil {
             currentWebView.reload()
-            closePopup()
         }
+        safariVC = nil
+        safariOriginURL = nil
     }
     deinit {
         for webView in webViews {
