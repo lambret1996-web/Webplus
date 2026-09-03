@@ -2,13 +2,18 @@ import UIKit
 import WebKit
 class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UIScrollViewDelegate, UITextFieldDelegate {
     // MARK: - 配置项
-    private let windowTitles: [String] = ["GitHub", "CF", "Google", "YouTube"]
-    private let windowURLs: [String] = [
+    private var windowTitles: [String] = ["GitHub", "CF", "Google", "YouTube"]
+    private var windowURLs: [String] = [
         "https://github.com",
         "https://dash.cloudflare.com/",
         "https://www.google.com",
         "https://www.youtube.com"
     ]
+    /// 书签列表（长按GitHub收藏，长按CF打开）
+    private var bookmarks: [String] = []
+    private let bookmarksKey = "savedBookmarks"
+    private let customTitlesKey = "customWindowTitles"
+    private let customURLsKey = "customWindowURLs"
     private let tabBarHeight: CGFloat = 28
     private let translateButtonSize: CGFloat = 18
     private let maxTranslateSegments = 5000
@@ -40,6 +45,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        loadCustomConfig()
         checkAndClearCacheIfNeeded()
         setupTabBar()
         setupWebViewContainer()
@@ -111,6 +117,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             btn.setTitleColor(i == 0 ? .systemBlue : .secondaryLabel, for: .normal)
             btn.translatesAutoresizingMaskIntoConstraints = false
             btn.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
+            let longPress = UILongPressGestureRecognizer(target: self, action: #selector(tabLongPressed(_:)))
+            longPress.minimumPressDuration = 0.5
+            btn.addGestureRecognizer(longPress)
             tabBar.addSubview(btn)
             tabButtons.append(btn)
         }
@@ -127,6 +136,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         urlTextField.clearButtonMode = .whileEditing
         urlTextField.delegate = self
         urlTextField.translatesAutoresizingMaskIntoConstraints = false
+        let urlLongPress = UILongPressGestureRecognizer(target: self, action: #selector(urlFieldLongPressed(_:)))
+        urlLongPress.minimumPressDuration = 0.5
+        urlTextField.addGestureRecognizer(urlLongPress)
         tabBar.addSubview(urlTextField)
         NSLayoutConstraint.activate([
             // 左1：GitHub
@@ -166,6 +178,17 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         textField.resignFirstResponder()
         guard let input = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines),
               !input.isEmpty else { return true }
+        // 智能搜索：含空格/中文/无点号 → Google搜索
+        let hasChinese = input.range(of: "\\p{Han}", options: .regularExpression) != nil
+        let hasSpace = input.contains(" ")
+        let hasDot = input.contains(".")
+        if hasChinese || hasSpace || !hasDot {
+            let encoded = input.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? input
+            if let searchURL = URL(string: "https://www.google.com/search?q=\(encoded)") {
+                currentWebView.load(URLRequest(url: searchURL))
+            }
+            return true
+        }
         var urlString = input
         if !urlString.hasPrefix("http://") && !urlString.hasPrefix("https://") {
             urlString = "https://" + urlString
@@ -178,6 +201,174 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     /// 更新地址栏显示当前页面URL
     private func updateURLField() {
         urlTextField.text = currentWebView.url?.absoluteString ?? ""
+    }
+    // MARK: - 长按手势处理
+    @objc private func tabLongPressed(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began, let btn = gesture.view as? UIButton else { return }
+        switch btn.tag {
+        case 0: saveBookmark()       // GitHub：收藏当前页面
+        case 1: openBookmarks()      // CF：打开书签列表
+        case 2: clearCurrentSiteCache() // Google：清除当前站点缓存
+        case 3: manageWindows()      // YouTube：管理窗口配置
+        default: break
+        }
+    }
+    @objc private func urlFieldLongPressed(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        let url = currentWebView.url?.absoluteString ?? urlTextField.text ?? ""
+        UIPasteboard.general.string = url
+        showToast("已复制链接")
+    }
+    // MARK: - 书签功能
+    private func saveBookmark() {
+        guard let url = currentWebView.url?.absoluteString else {
+            showToast("当前页面无有效链接"); return
+        }
+        if bookmarks.contains(url) {
+            showToast("该书签已存在"); return
+        }
+        bookmarks.append(url)
+        UserDefaults.standard.set(bookmarks, forKey: bookmarksKey)
+        showToast("已收藏：\(url.prefix(30))...")
+    }
+    private func openBookmarks() {
+        if bookmarks.isEmpty {
+            showToast("暂无书签，长按GitHub可收藏"); return
+        }
+        let alert = UIAlertController(title: "书签列表", message: nil, preferredStyle: .actionSheet)
+        for (i, bm) in bookmarks.enumerated() {
+            alert.addAction(UIAlertAction(title: bm, style: .default) { _ in
+                if let url = URL(string: bm) {
+                    self.currentWebView.load(URLRequest(url: url))
+                }
+            })
+            // 支持删除
+            alert.addAction(UIAlertAction(title: "删除此书签", style: .destructive) { _ in
+                self.bookmarks.remove(at: i)
+                UserDefaults.standard.set(self.bookmarks, forKey: self.bookmarksKey)
+                self.showToast("已删除")
+            })
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = tabButtons[1]
+            popover.sourceRect = tabButtons[1].bounds
+        }
+        present(alert, animated: true)
+    }
+    // MARK: - 清除当前站点缓存
+    private func clearCurrentSiteCache() {
+        guard let host = currentWebView.url?.host else {
+            showToast("无法获取当前站点"); return
+        }
+        let store = currentWebView.configuration.websiteDataStore
+        let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+        store.fetchDataRecords(ofTypes: dataTypes) { records in
+            let target = records.filter { $0.displayName == host || host.contains($0.displayName) }
+            store.removeData(ofTypes: dataTypes, for: target) {
+                DispatchQueue.main.async {
+                    self.currentWebView.reload()
+                    self.showToast("已清除 \(host) 缓存")
+                }
+            }
+        }
+    }
+    // MARK: - 窗口管理（自定义名称和地址）
+    private func manageWindows() {
+        let alert = UIAlertController(title: "管理窗口", message: "修改4个窗口的名称和地址", preferredStyle: .alert)
+        for i in 0..<4 {
+            alert.addTextField { tf in
+                tf.placeholder = "窗口\(i+1)名称"
+                tf.text = self.windowTitles[i]
+                tf.font = .systemFont(ofSize: 12)
+            }
+            alert.addTextField { tf in
+                tf.placeholder = "窗口\(i+1)地址"
+                tf.text = self.windowURLs[i]
+                tf.font = .systemFont(ofSize: 10)
+                tf.keyboardType = .URL
+                tf.autocapitalizationType = .none
+                tf.autocorrectionType = .no
+            }
+        }
+        alert.addAction(UIAlertAction(title: "保存", style: .default) { _ in
+            guard let fields = alert.textFields, fields.count == 8 else { return }
+            var newTitles: [String] = []
+            var newURLs: [String] = []
+            for i in 0..<4 {
+                let title = fields[i*2].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let url = fields[i*2+1].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                newTitles.append(title.isEmpty ? self.windowTitles[i] : title)
+                newURLs.append(url.isEmpty ? self.windowURLs[i] : url)
+            }
+            self.windowTitles = newTitles
+            self.windowURLs = newURLs
+            self.saveCustomConfig()
+            // 更新标签按钮标题
+            for (i, btn) in self.tabButtons.enumerated() {
+                btn.setTitle(newTitles[i], for: .normal)
+            }
+            // 重新加载所有页面
+            for (i, wv) in self.webViews.enumerated() {
+                if let url = URL(string: newURLs[i]) {
+                    wv.load(URLRequest(url: url))
+                }
+            }
+            self.showToast("窗口配置已保存")
+        })
+        alert.addAction(UIAlertAction(title: "恢复默认", style: .destructive) { _ in
+            self.windowTitles = ["GitHub", "CF", "Google", "YouTube"]
+            self.windowURLs = ["https://github.com", "https://dash.cloudflare.com/", "https://www.google.com", "https://www.youtube.com"]
+            UserDefaults.standard.removeObject(forKey: self.customTitlesKey)
+            UserDefaults.standard.removeObject(forKey: self.customURLsKey)
+            for (i, btn) in self.tabButtons.enumerated() {
+                btn.setTitle(self.windowTitles[i], for: .normal)
+            }
+            for (i, wv) in self.webViews.enumerated() {
+                if let url = URL(string: self.windowURLs[i]) {
+                    wv.load(URLRequest(url: url))
+                }
+            }
+            self.showToast("已恢复默认窗口")
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    // MARK: - 自定义配置存取
+    private func loadCustomConfig() {
+        if let titles = UserDefaults.standard.stringArray(forKey: customTitlesKey), titles.count == 4 {
+            windowTitles = titles
+        }
+        if let urls = UserDefaults.standard.stringArray(forKey: customURLsKey), urls.count == 4 {
+            windowURLs = urls
+        }
+        if let bm = UserDefaults.standard.stringArray(forKey: bookmarksKey) {
+            bookmarks = bm
+        }
+    }
+    private func saveCustomConfig() {
+        UserDefaults.standard.set(windowTitles, forKey: customTitlesKey)
+        UserDefaults.standard.set(windowURLs, forKey: customURLsKey)
+    }
+    // MARK: - Toast提示
+    private func showToast(_ message: String) {
+        let toast = UILabel(frame: CGRect(x: 0, y: 0, width: 250, height: 40))
+        toast.center = CGPoint(x: view.bounds.width / 2, y: view.bounds.height - 120)
+        toast.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+        toast.textColor = .white
+        toast.textAlignment = .center
+        toast.font = .systemFont(ofSize: 13)
+        toast.text = message
+        toast.layer.cornerRadius = 20
+        toast.clipsToBounds = true
+        toast.numberOfLines = 2
+        toast.alpha = 0
+        view.addSubview(toast)
+        UIView.animate(withDuration: 0.3, animations: { toast.alpha = 1 }) { _ in
+            UIView.animate(withDuration: 0.3, delay: 1.5, options: [], animations: { toast.alpha = 0 }) { _ in
+                toast.removeFromSuperview()
+            }
+        }
     }
     @objc private func tabTapped(_ sender: UIButton) {
         switchToTab(index: sender.tag)
