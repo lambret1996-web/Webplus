@@ -2,15 +2,17 @@ import UIKit
 import WebKit
 class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UIScrollViewDelegate {
     // MARK: - 配置项
+    private let windowTitles: [String] = ["多窗口", "浏览器", "Google", "YouTube"]
     private let windowURLs: [String] = [
         "https://github.com",
-        "https://dash.cloudflare.com/"
+        "https://dash.cloudflare.com/",
+        "https://www.google.com",
+        "https://www.youtube.com"
     ]
     private let tabBarHeight: CGFloat = 28
     private let translateButtonSize: CGFloat = 24
     private let maxTranslateSegments = 5000
-    /// 下拉刷新触发距离（默认约60pt，设为120pt翻倍，避免误触）
-    private let refreshTriggerDistance: CGFloat = 120
+    private let refreshTriggerDistance: CGFloat = 70
     // MARK: - UI 组件
     private var tabBar: UIView!
     private var tabButtons: [UIButton] = []
@@ -23,7 +25,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var refreshViews: [UIView] = []
     private var refreshIndicators: [UIActivityIndicatorView] = []
     private var refreshLabels: [UILabel] = []
-    private var isRefreshing: [Bool] = [false, false]
+    private var isRefreshing: [Bool] = [false, false, false, false]
     private var activeIndex: Int = 0
     // MARK: - 手势相关
     private var gestureStartPoint: CGPoint = .zero
@@ -31,7 +33,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private let gestureThreshold: CGFloat = 80
     private let gestureMaxDuration: TimeInterval = 0.5
     // MARK: - 翻译相关
-    private var isTranslated: [Bool] = [false, false]
+    private var isTranslated: [Bool] = [false, false, false, false]
     private var isTranslating = false
     // MARK: - 生命周期
     override func viewDidLoad() {
@@ -81,40 +83,47 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         translateButton.translatesAutoresizingMaskIntoConstraints = false
         translateButton.addTarget(self, action: #selector(translateTapped), for: .touchUpInside)
         tabBar.addSubview(translateButton)
-        // 标签按钮（上层，无背景色）
-        let tabLeft = UIButton(type: .system)
-        tabLeft.setTitle("GitHub", for: .normal)
-        tabLeft.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
-        tabLeft.tag = 0
-        tabLeft.backgroundColor = .clear
-        tabLeft.setTitleColor(.systemBlue, for: .normal)
-        tabLeft.translatesAutoresizingMaskIntoConstraints = false
-        tabLeft.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
-        tabBar.addSubview(tabLeft)
-        tabButtons.append(tabLeft)
-        let tabRight = UIButton(type: .system)
-        tabRight.setTitle("CF", for: .normal)
-        tabRight.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
-        tabRight.tag = 1
-        tabRight.backgroundColor = .clear
-        tabRight.setTitleColor(.secondaryLabel, for: .normal)
-        tabRight.translatesAutoresizingMaskIntoConstraints = false
-        tabRight.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
-        tabBar.addSubview(tabRight)
-        tabButtons.append(tabRight)
+        // 标签按钮（动态创建4个：左2 + 翻译按钮 + 右2）
+        let tabWidth: CGFloat = 55
+        let tabFont: CGFloat = 10
+        for (i, title) in windowTitles.enumerated() {
+            let btn = UIButton(type: .system)
+            btn.setTitle(title, for: .normal)
+            btn.titleLabel?.font = .systemFont(ofSize: tabFont, weight: i == 0 ? .bold : .regular)
+            btn.tag = i
+            btn.backgroundColor = .clear
+            btn.setTitleColor(i == 0 ? .systemBlue : .secondaryLabel, for: .normal)
+            btn.translatesAutoresizingMaskIntoConstraints = false
+            btn.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
+            tabBar.addSubview(btn)
+            tabButtons.append(btn)
+        }
         NSLayoutConstraint.activate([
-            tabLeft.leadingAnchor.constraint(equalTo: tabBar.leadingAnchor, constant: 12),
-            tabLeft.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
-            tabLeft.widthAnchor.constraint(equalToConstant: 70),
-            tabLeft.heightAnchor.constraint(equalToConstant: 28),
-            tabRight.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -12),
-            tabRight.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
-            tabRight.widthAnchor.constraint(equalToConstant: 70),
-            tabRight.heightAnchor.constraint(equalToConstant: 28),
+            // 左1：多窗口
+            tabButtons[0].leadingAnchor.constraint(equalTo: tabBar.leadingAnchor, constant: 6),
+            tabButtons[0].centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
+            tabButtons[0].widthAnchor.constraint(equalToConstant: tabWidth),
+            tabButtons[0].heightAnchor.constraint(equalToConstant: 24),
+            // 左2：浏览器
+            tabButtons[1].leadingAnchor.constraint(equalTo: tabButtons[0].trailingAnchor, constant: 2),
+            tabButtons[1].centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
+            tabButtons[1].widthAnchor.constraint(equalToConstant: tabWidth),
+            tabButtons[1].heightAnchor.constraint(equalToConstant: 24),
+            // 翻译按钮居中
             translateButton.centerXAnchor.constraint(equalTo: tabBar.centerXAnchor),
             translateButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             translateButton.widthAnchor.constraint(equalToConstant: translateButtonSize),
-            translateButton.heightAnchor.constraint(equalToConstant: translateButtonSize)
+            translateButton.heightAnchor.constraint(equalToConstant: translateButtonSize),
+            // 右2：Google
+            tabButtons[2].trailingAnchor.constraint(equalTo: tabButtons[3].leadingAnchor, constant: -2),
+            tabButtons[2].centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
+            tabButtons[2].widthAnchor.constraint(equalToConstant: tabWidth),
+            tabButtons[2].heightAnchor.constraint(equalToConstant: 24),
+            // 右1：YouTube
+            tabButtons[3].trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -6),
+            tabButtons[3].centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
+            tabButtons[3].widthAnchor.constraint(equalToConstant: tabWidth),
+            tabButtons[3].heightAnchor.constraint(equalToConstant: 24)
         ])
     }
     @objc private func tabTapped(_ sender: UIButton) {
@@ -125,10 +134,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         for (i, button) in tabButtons.enumerated() {
             if i == index {
                 button.setTitleColor(.systemBlue, for: .normal)
-                button.titleLabel?.font = .systemFont(ofSize: 14, weight: .bold)
+                button.titleLabel?.font = .systemFont(ofSize: 10, weight: .bold)
             } else {
                 button.setTitleColor(.secondaryLabel, for: .normal)
-                button.titleLabel?.font = .systemFont(ofSize: 14, weight: .regular)
+                button.titleLabel?.font = .systemFont(ofSize: 10, weight: .regular)
             }
         }
         for (i, webView) in webViews.enumerated() {
@@ -150,7 +159,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         ])
     }
     private func setupWebViews() {
-        for i in 0..<2 {
+        for i in 0..<windowTitles.count {
             let config = WKWebViewConfiguration()
             config.allowsInlineMediaPlayback = true
             config.mediaTypesRequiringUserActionForPlayback = []
