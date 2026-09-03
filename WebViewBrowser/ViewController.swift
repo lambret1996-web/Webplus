@@ -10,7 +10,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         "https://www.youtube.com"
     ]
     private let tabBarHeight: CGFloat = 28
-    private let translateButtonSize: CGFloat = 20
+    private let translateButtonSize: CGFloat = 18
     private let maxTranslateSegments = 5000
     private let refreshTriggerDistance: CGFloat = 70
     // MARK: - UI 组件
@@ -31,7 +31,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // MARK: - 手势相关
     private var gestureStartPoint: CGPoint = .zero
     private var gestureStartDate: Date = .init()
-    private let gestureThreshold: CGFloat = 80
+    private let gestureThreshold: CGFloat = 90
     private let gestureMaxDuration: TimeInterval = 0.5
     // MARK: - 翻译相关
     private var isTranslated: [Bool] = [false, false, false, false]
@@ -140,7 +140,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             tabButtons[1].widthAnchor.constraint(equalToConstant: 42),
             tabButtons[1].heightAnchor.constraint(equalToConstant: 24),
             // 翻译按钮：CF右边距10px
-            translateButton.leadingAnchor.constraint(equalTo: tabButtons[1].trailingAnchor, constant: 5),
+            translateButton.leadingAnchor.constraint(equalTo: tabButtons[1].trailingAnchor, constant: 3),
             translateButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             translateButton.widthAnchor.constraint(equalToConstant: translateButtonSize),
             translateButton.heightAnchor.constraint(equalToConstant: translateButtonSize),
@@ -148,7 +148,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             urlTextField.leadingAnchor.constraint(equalTo: translateButton.trailingAnchor, constant: 5),
             urlTextField.trailingAnchor.constraint(equalTo: tabButtons[2].leadingAnchor, constant: -5),
             urlTextField.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
-            urlTextField.heightAnchor.constraint(equalToConstant: 22),
+            urlTextField.heightAnchor.constraint(equalToConstant: 20),
             // 右2：Google
             tabButtons[2].trailingAnchor.constraint(equalTo: tabButtons[3].leadingAnchor, constant: -2),
             tabButtons[2].centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
