@@ -307,9 +307,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 return
             }
             if horizontalDistance > 0 {
-                if currentWebView.canGoForward { currentWebView.goForward() }
-            } else {
                 if currentWebView.canGoBack { currentWebView.goBack() }
+            } else {
+                if currentWebView.canGoForward { currentWebView.goForward() }
             }
         default:
             break
