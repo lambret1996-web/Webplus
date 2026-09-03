@@ -1,20 +1,16 @@
 import UIKit
 import WebKit
-class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
+class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, UIScrollViewDelegate {
     // MARK: - 配置项
-    /// 两个窗口的默认页面
     private let windowURLs: [String] = [
         "https://github.com",
         "https://dash.cloudflare.com/"
     ]
-    /// 窗口标签默认名称
-    private let windowTitles: [String] = ["窗口一", "窗口二"]
-    /// 底部工具栏高度
     private let tabBarHeight: CGFloat = 56
-    /// 翻译按钮尺寸（圆形）
     private let translateButtonSize: CGFloat = 48
-    /// 单次翻译最大文本段数（防止超大页面内存溢出）
     private let maxTranslateSegments = 5000
+    /// 下拉刷新触发距离（默认约60pt，这里设为120pt翻倍，避免误触）
+    private let refreshTriggerDistance: CGFloat = 120
     // MARK: - UI 组件
     private var tabBar: UIView!
     private var tabButtons: [UIButton] = []
@@ -22,9 +18,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     private var webViews: [WKWebView] = []
     private var webViewContainer: UIView!
     private var progressView: UIProgressView!
-    private var refreshControls: [UIRefreshControl] = []
     private var panGestures: [UIPanGestureRecognizer] = []
-    /// 当前激活的窗口索引
+    /// 自定义下拉刷新视图
+    private var refreshViews: [UIView] = []
+    private var refreshIndicators: [UIActivityIndicatorView] = []
+    private var refreshLabels: [UILabel] = []
+    private var isRefreshing: [Bool] = [false, false]
     private var activeIndex: Int = 0
     // MARK: - 手势相关
     private var gestureStartPoint: CGPoint = .zero
@@ -42,14 +41,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         setupWebViewContainer()
         setupWebViews()
         setupProgressView()
-        setupRefreshControls()
         setupGestures()
         switchToTab(index: 0)
         loadInitialPages()
     }
     override var prefersStatusBarHidden: Bool { false }
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }
-    // MARK: - 底部工具栏（毛玻璃 + 圆形翻译按钮居中）
+    // MARK: - 顶部工具栏
     private func setupTabBar() {
         tabBar = UIView()
         tabBar.backgroundColor = .secondarySystemBackground
@@ -69,7 +67,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             separator.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor),
             separator.heightAnchor.constraint(equalToConstant: 0.5)
         ])
-        // 先创建翻译按钮（底层）
+        // 翻译按钮（底层）
         translateButton = UIButton(type: .custom)
         translateButton.setTitle("译", for: .normal)
         translateButton.titleLabel?.font = .systemFont(ofSize: 20, weight: .bold)
@@ -83,41 +81,36 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         translateButton.translatesAutoresizingMaskIntoConstraints = false
         translateButton.addTarget(self, action: #selector(translateTapped), for: .touchUpInside)
         tabBar.addSubview(translateButton)
-
-        // 再创建标签按钮（上层，确保可见）
-        let tabLeft = UIButton(type: .custom)
-        tabLeft.setTitle("窗口一", for: .normal)
-        tabLeft.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        // 标签按钮（上层，无背景色）
+        let tabLeft = UIButton(type: .system)
+        tabLeft.setTitle("GitHub", for: .normal)
+        tabLeft.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
         tabLeft.tag = 0
-        tabLeft.layer.cornerRadius = 16
-        tabLeft.backgroundColor = .systemBlue
-        tabLeft.setTitleColor(.white, for: .normal)
+        tabLeft.backgroundColor = .clear
+        tabLeft.setTitleColor(.systemBlue, for: .normal)
         tabLeft.translatesAutoresizingMaskIntoConstraints = false
         tabLeft.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
         tabBar.addSubview(tabLeft)
         tabButtons.append(tabLeft)
-
-        let tabRight = UIButton(type: .custom)
-        tabRight.setTitle("窗口二", for: .normal)
-        tabRight.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        let tabRight = UIButton(type: .system)
+        tabRight.setTitle("CF", for: .normal)
+        tabRight.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
         tabRight.tag = 1
-        tabRight.layer.cornerRadius = 16
-        tabRight.backgroundColor = .darkGray
-        tabRight.setTitleColor(.white, for: .normal)
+        tabRight.backgroundColor = .clear
+        tabRight.setTitleColor(.secondaryLabel, for: .normal)
         tabRight.translatesAutoresizingMaskIntoConstraints = false
         tabRight.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
         tabBar.addSubview(tabRight)
         tabButtons.append(tabRight)
-
         NSLayoutConstraint.activate([
-            tabLeft.leadingAnchor.constraint(equalTo: tabBar.leadingAnchor, constant: 12),
+            tabLeft.leadingAnchor.constraint(equalTo: tabBar.leadingAnchor, constant: 16),
             tabLeft.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
-            tabLeft.widthAnchor.constraint(equalToConstant: 70),
-            tabLeft.heightAnchor.constraint(equalToConstant: 32),
-            tabRight.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -12),
+            tabLeft.widthAnchor.constraint(equalToConstant: 80),
+            tabLeft.heightAnchor.constraint(equalToConstant: 36),
+            tabRight.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -16),
             tabRight.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
-            tabRight.widthAnchor.constraint(equalToConstant: 70),
-            tabRight.heightAnchor.constraint(equalToConstant: 32),
+            tabRight.widthAnchor.constraint(equalToConstant: 80),
+            tabRight.heightAnchor.constraint(equalToConstant: 36),
             translateButton.centerXAnchor.constraint(equalTo: tabBar.centerXAnchor),
             translateButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             translateButton.widthAnchor.constraint(equalToConstant: translateButtonSize),
@@ -131,13 +124,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         activeIndex = index
         for (i, button) in tabButtons.enumerated() {
             if i == index {
-                button.backgroundColor = .systemBlue
-                button.setTitleColor(.white, for: .normal)
-                button.titleLabel?.font = .systemFont(ofSize: 14, weight: .bold)
+                button.setTitleColor(.systemBlue, for: .normal)
+                button.titleLabel?.font = .systemFont(ofSize: 15, weight: .bold)
             } else {
-                button.backgroundColor = .darkGray
-                button.setTitleColor(.white, for: .normal)
-                button.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+                button.setTitleColor(.secondaryLabel, for: .normal)
+                button.titleLabel?.font = .systemFont(ofSize: 15, weight: .regular)
             }
         }
         for (i, webView) in webViews.enumerated() {
@@ -170,6 +161,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             webView.allowsBackForwardNavigationGestures = false
             webView.translatesAutoresizingMaskIntoConstraints = false
             webView.scrollView.bounces = true
+            webView.scrollView.delegate = self
             webView.isHidden = (i != 0)
             webViewContainer.addSubview(webView)
             NSLayoutConstraint.activate([
@@ -180,7 +172,29 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             ])
             webView.addObserver(self, forKeyPath: #keyPath(WKWebView.estimatedProgress), options: .new, context: nil)
             webViews.append(webView)
+            // 自定义下拉刷新视图
+            setupCustomRefresh(for: webView, index: i)
         }
+    }
+    /// 自定义下拉刷新（触发距离120pt，避免误触）
+    private func setupCustomRefresh(for webView: WKWebView, index: Int) {
+        let refreshView = UIView(frame: CGRect(x: 0, y: -60, width: UIScreen.main.bounds.width, height: 60))
+        refreshView.backgroundColor = .clear
+        refreshView.autoresizingMask = [.flexibleWidth]
+        let indicator = UIActivityIndicatorView(style: .medium)
+        indicator.center = CGPoint(x: refreshView.bounds.midX - 50, y: refreshView.bounds.midY)
+        indicator.hidesWhenStopped = true
+        refreshView.addSubview(indicator)
+        let label = UILabel(frame: CGRect(x: refreshView.bounds.midX - 30, y: 0, width: 120, height: 60))
+        label.text = "下拉刷新"
+        label.font = .systemFont(ofSize: 13)
+        label.textColor = .secondaryLabel
+        label.textAlignment = .left
+        refreshView.addSubview(label)
+        webView.scrollView.addSubview(refreshView)
+        refreshViews.append(refreshView)
+        refreshIndicators.append(indicator)
+        refreshLabels.append(label)
     }
     private func loadInitialPages() {
         for (index, urlString) in windowURLs.enumerated() {
@@ -191,7 +205,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     private var currentWebView: WKWebView {
         webViews[activeIndex]
     }
-    // MARK: - 进度条（顶部）
+    // MARK: - 进度条
     private func setupProgressView() {
         progressView = UIProgressView(progressViewStyle: .default)
         progressView.progressTintColor = .systemBlue
@@ -217,17 +231,53 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             updateProgressView()
         }
     }
-    // MARK: - 下拉刷新
-    private func setupRefreshControls() {
-        for webView in webViews {
-            let refresh = UIRefreshControl()
-            refresh.addTarget(self, action: #selector(handleRefresh), for: .valueChanged)
-            webView.scrollView.addSubview(refresh)
-            refreshControls.append(refresh)
+    // MARK: - UIScrollViewDelegate（自定义下拉刷新）
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard let index = webViews.firstIndex(where: { $0.scrollView === scrollView }) else { return }
+        guard !isRefreshing[index] else { return }
+        let pullDistance = -scrollView.contentOffset.y
+        if pullDistance > 0 {
+            refreshViews[index].isHidden = false
+            if pullDistance >= refreshTriggerDistance {
+                refreshLabels[index].text = "释放刷新"
+                refreshLabels[index].textColor = .systemBlue
+            } else {
+                refreshLabels[index].text = "下拉刷新"
+                refreshLabels[index].textColor = .secondaryLabel
+            }
+        } else {
+            refreshViews[index].isHidden = true
         }
     }
-    @objc private func handleRefresh() {
-        currentWebView.reload()
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        guard let index = webViews.firstIndex(where: { $0.scrollView === scrollView }) else { return }
+        guard !isRefreshing[index] else { return }
+        let pullDistance = -scrollView.contentOffset.y
+        if pullDistance >= refreshTriggerDistance {
+            startCustomRefresh(for: index)
+        }
+    }
+    private func startCustomRefresh(for index: Int) {
+        isRefreshing[index] = true
+        refreshIndicators[index].startAnimating()
+        refreshLabels[index].text = "刷新中..."
+        refreshLabels[index].textColor = .systemBlue
+        UIView.animate(withDuration: 0.25) {
+            self.webViews[index].scrollView.contentInset.top = 60
+        }
+        webViews[index].reload()
+    }
+    private func endCustomRefresh(for index: Int) {
+        guard isRefreshing[index] else { return }
+        isRefreshing[index] = false
+        refreshIndicators[index].stopAnimating()
+        refreshLabels[index].text = "下拉刷新"
+        refreshLabels[index].textColor = .secondaryLabel
+        UIView.animate(withDuration: 0.25, animations: {
+            self.webViews[index].scrollView.contentInset.top = 0
+        }) { _ in
+            self.refreshViews[index].isHidden = true
+        }
     }
     // MARK: - 手势导航
     private func setupGestures() {
@@ -257,19 +307,15 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
                 return
             }
             if horizontalDistance > 0 {
-                if currentWebView.canGoForward {
-                    currentWebView.goForward()
-                }
+                if currentWebView.canGoForward { currentWebView.goForward() }
             } else {
-                if currentWebView.canGoBack {
-                    currentWebView.goBack()
-                }
+                if currentWebView.canGoBack { currentWebView.goBack() }
             }
         default:
             break
         }
     }
-    // MARK: - 全局翻译功能
+    // MARK: - 翻译功能
     @objc private func translateTapped() {
         guard !isTranslating else { return }
         if isTranslated[activeIndex] {
@@ -333,8 +379,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         let targetIndex = activeIndex
         targetWebView.evaluateJavaScript(collectTextJS) { [weak self] result, error in
             guard let self = self else { return }
-            if let error = error {
-                print("收集文本失败: \(error.localizedDescription)")
+            if let _ = error {
                 self.showTranslateToast("翻译启动失败")
                 return
             }
@@ -370,9 +415,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         for (i, text) in texts.enumerated() {
             queue.addOperation { [weak self] in
                 guard let self = self else {
-                    lock.lock()
-                    results[i] = text
-                    lock.unlock()
+                    lock.lock(); results[i] = text; lock.unlock()
                     return
                 }
                 let sem = DispatchSemaphore(value: 0)
@@ -389,52 +432,40 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         }
         DispatchQueue.global(qos: .userInitiated).async {
             queue.waitUntilAllOperationsAreFinished()
-            DispatchQueue.main.async {
-                completion(results)
-            }
+            DispatchQueue.main.async { completion(results) }
         }
     }
     private func translateSingle(_ text: String, completion: @escaping (String?) -> Void) {
         let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
         let userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"
         guard let url1 = URL(string: "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&q=\(encoded)") else {
-            completion(nil)
-            return
+            completion(nil); return
         }
         var req1 = URLRequest(url: url1)
         req1.timeoutInterval = 10
         req1.httpMethod = "GET"
         req1.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         req1.setValue("*/*", forHTTPHeaderField: "Accept")
-        req1.setValue("zh-CN,zh;q=0.9", forHTTPHeaderField: "Accept-Language")
-        URLSession.shared.dataTask(with: req1) { data, response, error in
+        URLSession.shared.dataTask(with: req1) { data, response, _ in
             if let data = data,
                let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
                let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
                let segments = json.first as? [[Any]] {
                 var translated = ""
                 for seg in segments {
-                    if seg.count > 0, let text = seg[0] as? String {
-                        translated += text
-                    }
+                    if seg.count > 0, let t = seg[0] as? String { translated += t }
                 }
-                if !translated.isEmpty {
-                    completion(translated)
-                    return
-                }
+                if !translated.isEmpty { completion(translated); return }
             }
-            print("Google翻译失败，降级到MyMemory")
             guard let url2 = URL(string: "https://api.mymemory.translated.net/get?q=\(encoded)&langpair=autodetect|zh-CN") else {
-                completion(nil)
-                return
+                completion(nil); return
             }
             var req2 = URLRequest(url: url2)
             req2.timeoutInterval = 10
             req2.httpMethod = "GET"
             req2.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-            req2.setValue("application/json", forHTTPHeaderField: "Accept")
             req2.setValue("https://mymemory.translated.net/", forHTTPHeaderField: "Referer")
-            URLSession.shared.dataTask(with: req2) { data, response, error in
+            URLSession.shared.dataTask(with: req2) { data, response, _ in
                 if let data = data,
                    let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -442,11 +473,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
                    let respData = json["responseData"] as? [String: Any],
                    let translated = respData["translatedText"] as? String,
                    !translated.isEmpty {
-                    completion(translated)
-                    return
-                }
-                if let data = data, let raw = String(data: data, encoding: .utf8) {
-                    print("MyMemory返回: \(raw.prefix(200))")
+                    completion(translated); return
                 }
                 completion(nil)
             }.resume()
@@ -473,13 +500,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             });
             var n;
             while ((n = walker.nextNode())) {
-                if (idx < translations.length && translations[idx]) {
-                    n.textContent = translations[idx];
-                }
+                if (idx < translations.length && translations[idx]) n.textContent = translations[idx];
                 idx++;
             }
-            window.__browser_translate_done__ = true;
-            return 'applied:' + idx;
+            return 'applied';
         })();
         """
         webView.evaluateJavaScript(js, completionHandler: nil)
@@ -493,13 +517,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             for (var i = 0; i < all.length; i++) {
                 for (var j = 0; j < all[i].childNodes.length; j++) {
                     var n = all[i].childNodes[j];
-                    if (n.nodeType === 3 && n.__browser_orig_text__) {
-                        n.textContent = n.__browser_orig_text__;
-                    }
+                    if (n.nodeType === 3 && n.__browser_orig_text__) n.textContent = n.__browser_orig_text__;
                 }
             }
             window.__browser_translate_active__ = false;
-            window.__browser_translate_done__ = false;
             return 'restored';
         })();
         """
@@ -533,30 +554,79 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             }
         }
     }
-    // MARK: - WKNavigationDelegate
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if let index = webViews.firstIndex(of: webView), index < refreshControls.count {
-            refreshControls[index].endRefreshing()
+    // MARK: - 下载功能（WKDownloadDelegate）
+    /// 判断是否为下载请求
+    private func isDownloadResponse(_ response: URLResponse) -> Bool {
+        guard let httpResponse = response as? HTTPURLResponse else { return false }
+        // 检查 Content-Disposition: attachment
+        if let disposition = httpResponse.allHeaderFields["Content-Disposition"] as? String,
+           disposition.lowercased().contains("attachment") {
+            return true
         }
-        if let index = webViews.firstIndex(of: webView) {
-            isTranslated[index] = false
-            if index == activeIndex {
-                updateTranslateButtonState()
+        // WebView 不能直接显示的 MIME 类型
+        if let mimeType = response.mimeType, !mimeType.isEmpty {
+            let viewableTypes = ["text/html", "text/plain", "application/xhtml+xml", "image/", "video/", "audio/", "application/pdf"]
+            let isViewable = viewableTypes.contains { mimeType.lowercased().hasPrefix($0) }
+            if !isViewable { return true }
+        }
+        // 常见下载文件扩展名
+        if let url = response.url, let ext = url.pathExtension.lowercased() as String? {
+            let downloadExts = ["zip", "rar", "7z", "tar", "gz", "dmg", "pkg", "exe", "msi", "deb", "rpm", "apk", "ipa", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "epub", "mobi", "csv", "json", "xml", "txt"]
+            if downloadExts.contains(ext) { return true }
+        }
+        return false
+    }
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if isDownloadResponse(navigationResponse.response) {
+            decisionHandler(.download)
+            return
+        }
+        decisionHandler(.allow)
+    }
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+    func download(_ download: WKDownload, didFinishDownloadingTo location: URL) {
+        let fileName = download.originalRequest?.url?.lastPathComponent ?? "download_\(Int(Date().timeIntervalSince1970))"
+        let safeFileName = fileName.replacingOccurrences(of: "/", with: "_")
+        let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let destination = docsDir.appendingPathComponent(safeFileName)
+        do {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.moveItem(at: location, to: destination)
+            DispatchQueue.main.async {
+                self.showTranslateToast("下载完成: \(safeFileName)")
+            }
+        } catch {
+            DispatchQueue.main.async {
+                self.showTranslateToast("下载保存失败")
             }
         }
-        if webView === currentWebView {
-            progressView.isHidden = true
+    }
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        DispatchQueue.main.async {
+            self.showTranslateToast("下载失败")
         }
+    }
+    // MARK: - WKNavigationDelegate
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if let index = webViews.firstIndex(of: webView) {
+            endCustomRefresh(for: index)
+            isTranslated[index] = false
+            if index == activeIndex { updateTranslateButtonState() }
+        }
+        if webView === currentWebView { progressView.isHidden = true }
     }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        if let index = webViews.firstIndex(of: webView), index < refreshControls.count {
-            refreshControls[index].endRefreshing()
-        }
+        if let index = webViews.firstIndex(of: webView) { endCustomRefresh(for: index) }
     }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        if let index = webViews.firstIndex(of: webView), index < refreshControls.count {
-            refreshControls[index].endRefreshing()
-        }
+        if let index = webViews.firstIndex(of: webView) { endCustomRefresh(for: index) }
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         decisionHandler(.allow)
