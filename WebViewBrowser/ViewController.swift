@@ -13,6 +13,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     private let tabBarHeight: CGFloat = 44
     /// 翻译按钮宽度
     private let translateButtonWidth: CGFloat = 52
+    /// 单次翻译最大文本段数（防止超大页面内存溢出）
+    private let maxTranslateSegments = 5000
     // MARK: - UI 组件
     private var tabBar: UIView!
     private var tabButtons: [UIButton] = []
@@ -33,14 +35,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     // MARK: - 翻译相关
     private var isTranslated: [Bool] = [false, false]
     private var isTranslating = false
-    /// 带超时的翻译请求会话（10秒请求超时，15秒资源超时）
-    private lazy var translateSession: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 10
-        config.timeoutIntervalForResource = 15
-        config.httpMaximumConnectionsPerHost = 5
-        return URLSession(configuration: config)
-    }()
     // MARK: - 生命周期
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -268,9 +262,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             break
         }
     }
-    // MARK: - 全局翻译功能（原生端发起请求，后台队列并发，不阻塞主线程）
+    // MARK: - 全局翻译功能（OperationQueue并发，URLSession.shared，不阻塞主线程）
     @objc private func translateTapped() {
-        // 翻译中禁止重复点击
         guard !isTranslating else { return }
         if isTranslated[activeIndex] {
             restoreOriginalText()
@@ -294,35 +287,40 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             translateButton.setTitle("译", for: .normal)
         }
     }
-    /// JS：收集页面所有待翻译文本节点，保存原文，返回文本数组JSON
-    private let collectTextJS = """
-    (function() {
-        if (window.__browser_translate_active__) return JSON.stringify({error:'already_active'});
-        window.__browser_translate_active__ = true;
-        var texts = [];
-        var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-            acceptNode: function(node) {
-                if (!node.textContent || !node.textContent.trim()) return NodeFilter.FILTER_REJECT;
-                var p = node.parentElement;
-                if (!p) return NodeFilter.FILTER_REJECT;
-                var t = p.tagName.toLowerCase();
-                if (t==='script'||t==='style'||t==='noscript'||t==='textarea'||t==='input'||t==='select'||t==='option'||t==='code'||t==='pre') return NodeFilter.FILTER_REJECT;
-                if (/[\\u4e00-\\u9fa5]/.test(node.textContent)) return NodeFilter.FILTER_REJECT;
-                if (node.textContent.trim().length < 2) return NodeFilter.FILTER_REJECT;
-                return NodeFilter.FILTER_ACCEPT;
+    /// JS：收集页面待翻译文本（限制最大数量，保存原文），返回JSON
+    private var collectTextJS: String {
+        let maxSeg = maxTranslateSegments
+        return """
+        (function() {
+            if (window.__browser_translate_active__) return JSON.stringify({error:'already_active'});
+            window.__browser_translate_active__ = true;
+            var texts = [];
+            var count = 0;
+            var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+                acceptNode: function(node) {
+                    if (!node.textContent || !node.textContent.trim()) return NodeFilter.FILTER_REJECT;
+                    var p = node.parentElement;
+                    if (!p) return NodeFilter.FILTER_REJECT;
+                    var t = p.tagName.toLowerCase();
+                    if (t==='script'||t==='style'||t==='noscript'||t==='textarea'||t==='input'||t==='select'||t==='option'||t==='code'||t==='pre') return NodeFilter.FILTER_REJECT;
+                    if (/[\\u4e00-\\u9fa5]/.test(node.textContent)) return NodeFilter.FILTER_REJECT;
+                    if (node.textContent.trim().length < 2) return NodeFilter.FILTER_REJECT;
+                    return NodeFilter.FILTER_ACCEPT;
+                }
+            });
+            var n;
+            while ((n = walker.nextNode())) {
+                if (count >= \(maxSeg)) break;
+                if (!n.__browser_orig_text__) n.__browser_orig_text__ = n.textContent;
+                texts.push(n.textContent.trim());
+                count++;
             }
-        });
-        var n;
-        while ((n = walker.nextNode())) {
-            if (!n.__browser_orig_text__) n.__browser_orig_text__ = n.textContent;
-            texts.push(n.textContent.trim());
-        }
-        return JSON.stringify({count: texts.length, texts: texts});
-    })();
-    """
-    /// 启动翻译流程：锁定目标WebView → JS收集文本 → 后台队列原生端翻译 → JS应用结果
+            return JSON.stringify({count: texts.length, texts: texts});
+        })();
+        """
+    }
+    /// 启动翻译：锁定目标WebView → JS收集文本 → OperationQueue并发翻译 → 分批应用结果
     private func startTranslation() {
-        // 锁定当前窗口，翻译过程中切换标签不影响结果
         let targetWebView = currentWebView
         let targetIndex = activeIndex
 
@@ -345,60 +343,77 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
                 self.updateTranslateButtonState()
                 return
             }
-            // 标记翻译中，禁用按钮
+            // 标记翻译中
             self.isTranslating = true
             self.isTranslated[targetIndex] = true
             self.updateTranslateButtonState()
 
-            // 后台队列执行翻译，不阻塞主线程
-            self.translateTextsNative(texts) { [weak self] translations in
+            // OperationQueue 并发翻译（后台线程，不阻塞主线程）
+            self.translateWithOperationQueue(texts) { [weak self] translations in
                 guard let self = self else { return }
-                // 应用翻译结果到锁定的目标窗口
-                self.applyTranslations(translations, to: targetWebView)
+                // 分批应用翻译结果到页面（避免一次性注入超大JS）
+                self.applyTranslationsInBatches(translations, to: targetWebView)
                 self.isTranslating = false
                 self.updateTranslateButtonState()
             }
         }
     }
-    /// 原生端批量翻译：后台队列执行，5并发，NSLock保护数组，MyMemory→有道双源降级
-    private func translateTextsNative(_ texts: [String], completion: @escaping ([String]) -> Void) {
+    /// OperationQueue 并发翻译：max 5并发，每请求12秒超时，NSLock保护结果数组
+    private func translateWithOperationQueue(_ texts: [String], completion: @escaping ([String]) -> Void) {
         let lock = NSLock()
         var results = Array(repeating: "", count: texts.count)
-        let group = DispatchGroup()
-        let semaphore = DispatchSemaphore(value: 5)
 
-        // 关键：在后台队列执行 semaphore.wait()，绝不阻塞主线程
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else {
-                DispatchQueue.main.async { completion(texts) }
-                return
-            }
-            for (i, text) in texts.enumerated() {
-                semaphore.wait()
-                group.enter()
-                self.translateSingleNative(text) { translated in
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 5
+        queue.qualityOfService = .userInitiated
+
+        for (i, text) in texts.enumerated() {
+            queue.addOperation { [weak self] in
+                guard let self = self else {
                     lock.lock()
-                    results[i] = translated ?? text
+                    results[i] = text
                     lock.unlock()
-                    group.leave()
-                    semaphore.signal()
+                    return
                 }
+                let sem = DispatchSemaphore(value: 0)
+                var translatedResult: String? = nil
+
+                self.translateSingle(text) { translated in
+                    translatedResult = translated
+                    sem.signal()
+                }
+
+                // 等待最多12秒（请求超时10秒+2秒缓冲）
+                _ = sem.wait(timeout: .now() + 12)
+
+                lock.lock()
+                results[i] = translatedResult ?? text
+                lock.unlock()
             }
-            group.wait()
+        }
+
+        // 后台队列等待所有操作完成，绝不阻塞主线程
+        DispatchQueue.global(qos: .userInitiated).async {
+            queue.waitUntilAllOperationsAreFinished()
             DispatchQueue.main.async {
                 completion(results)
             }
         }
     }
-    /// 原生端单段翻译：MyMemory → 有道双源降级，使用带超时的会话
-    private func translateSingleNative(_ text: String, completion: @escaping (String?) -> Void) {
+    /// 单段翻译：MyMemory → 有道双源降级，URLSession.shared，每请求10秒超时
+    private func translateSingle(_ text: String, completion: @escaping (String?) -> Void) {
         let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
+
         // 源1：MyMemory
         guard let url1 = URL(string: "https://api.mymemory.translated.net/get?q=\(encoded)&langpair=autodetect|zh-CN") else {
             completion(nil)
             return
         }
-        translateSession.dataTask(with: url1) { data, _, error in
+        var req1 = URLRequest(url: url1)
+        req1.timeoutInterval = 10
+        req1.httpMethod = "GET"
+
+        URLSession.shared.dataTask(with: req1) { data, _, error in
             if let data = data, error == nil,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let status = json["responseStatus"] as? Int, status == 200,
@@ -413,7 +428,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
                 completion(nil)
                 return
             }
-            self.translateSession.dataTask(with: url2) { data, _, _ in
+            var req2 = URLRequest(url: url2)
+            req2.timeoutInterval = 10
+            req2.httpMethod = "GET"
+
+            URLSession.shared.dataTask(with: req2) { data, _, _ in
                 if let data = data,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let code = json["errorCode"] as? Int, code == 0,
@@ -433,40 +452,66 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             }.resume()
         }.resume()
     }
-    /// JS：将翻译结果应用到指定WebView的页面对应文本节点
-    private func applyTranslations(_ translations: [String], to webView: WKWebView) {
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: translations),
-              let jsonStr = String(data: jsonData, encoding: .utf8) else { return }
-        let applyJS = """
-        (function() {
-            var translations = \(jsonStr);
-            var idx = 0;
-            var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-                acceptNode: function(node) {
-                    if (!node.textContent || !node.textContent.trim()) return NodeFilter.FILTER_REJECT;
-                    var p = node.parentElement;
-                    if (!p) return NodeFilter.FILTER_REJECT;
-                    var t = p.tagName.toLowerCase();
-                    if (t==='script'||t==='style'||t==='noscript'||t==='textarea'||t==='input'||t==='select'||t==='option'||t==='code'||t==='pre') return NodeFilter.FILTER_REJECT;
-                    if (/[\\u4e00-\\u9fa5]/.test(node.textContent)) return NodeFilter.FILTER_REJECT;
-                    if (node.textContent.trim().length < 2) return NodeFilter.FILTER_REJECT;
-                    return NodeFilter.FILTER_ACCEPT;
-                }
-            });
-            var n;
-            while ((n = walker.nextNode())) {
-                if (idx < translations.length && translations[idx]) {
-                    n.textContent = translations[idx];
-                }
-                idx++;
+    /// 分批应用翻译结果到页面（每批200段，避免一次性注入超大JS字符串导致内存问题）
+    private func applyTranslationsInBatches(_ translations: [String], to webView: WKWebView) {
+        let batchSize = 200
+        var offset = 0
+
+        func applyNextBatch() {
+            if offset >= translations.count { return }
+            let end = min(offset + batchSize, translations.count)
+            let batch = Array(translations[offset..<end])
+
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: batch),
+                  let jsonStr = String(data: jsonData, encoding: .utf8) else {
+                offset = end
+                applyNextBatch()
+                return
             }
-            window.__browser_translate_done__ = true;
-            return 'applied';
-        })();
-        """
-        webView.evaluateJavaScript(applyJS, completionHandler: nil)
+
+            let js = """
+            (function() {
+                var batch = \(jsonStr);
+                var offset = \(offset);
+                var idx = 0;
+                var globalIdx = offset;
+                var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+                    acceptNode: function(node) {
+                        if (!node.textContent || !node.textContent.trim()) return NodeFilter.FILTER_REJECT;
+                        var p = node.parentElement;
+                        if (!p) return NodeFilter.FILTER_REJECT;
+                        var t = p.tagName.toLowerCase();
+                        if (t==='script'||t==='style'||t==='noscript'||t==='textarea'||t==='input'||t==='select'||t==='option'||t==='code'||t==='pre') return NodeFilter.FILTER_REJECT;
+                        if (/[\\u4e00-\\u9fa5]/.test(node.textContent)) return NodeFilter.FILTER_REJECT;
+                        if (node.textContent.trim().length < 2) return NodeFilter.FILTER_REJECT;
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                });
+                var n;
+                while ((n = walker.nextNode())) {
+                    if (globalIdx >= offset && globalIdx < offset + batch.length && idx < batch.length) {
+                        if (batch[idx]) n.textContent = batch[idx];
+                        idx++;
+                    }
+                    globalIdx++;
+                    if (globalIdx >= offset + batch.length) break;
+                }
+                return 'ok';
+            })();
+            """
+
+            webView.evaluateJavaScript(js) { _, _ in
+                offset = end
+                // 延迟一帧再应用下一批，避免阻塞JS线程
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
+                    applyNextBatch()
+                }
+            }
+        }
+
+        applyNextBatch()
     }
-    /// 恢复原文：调用页面内保存的原文
+    /// 恢复原文
     private func restoreOriginalText() {
         let targetWebView = currentWebView
         let targetIndex = activeIndex
@@ -486,7 +531,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             return 'restored';
         })();
         """
-        targetWebView.evaluateJavaScript(js) { [weak self] result, error in
+        targetWebView.evaluateJavaScript(js) { [weak self] _, _ in
             guard let self = self else { return }
             self.isTranslated[targetIndex] = false
             self.updateTranslateButtonState()
