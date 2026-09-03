@@ -34,6 +34,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var tabBar: UIView!
     private var tabButtons: [UIButton] = []
     private var translateButton: UIButton!
+    private var downloadButton: UIButton!
+    private var downloadBadge: UILabel!
+    private var confirmBar: UIView?
+    private var pendingDownloadURL: String?
+    private var pendingDownloadName: String?
     private var urlTextField: UITextField!
     private var webViews: [WKWebView] = []
     private var webViewContainer: UIView!
@@ -139,6 +144,25 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         translateButton.translatesAutoresizingMaskIntoConstraints = false
         translateButton.addTarget(self, action: #selector(translateTapped), for: .touchUpInside)
         tabBar.addSubview(translateButton)
+        // 下载按钮
+        downloadButton = UIButton(type: .system)
+        downloadButton.setImage(UIImage(systemName: "arrow.down.circle"), for: .normal)
+        downloadButton.tintColor = .systemBlue
+        downloadButton.translatesAutoresizingMaskIntoConstraints = false
+        downloadButton.addTarget(self, action: #selector(downloadButtonTapped), for: .touchUpInside)
+        tabBar.addSubview(downloadButton)
+        // 下载角标
+        downloadBadge = UILabel()
+        downloadBadge.text = "0"
+        downloadBadge.font = .systemFont(ofSize: 9, weight: .bold)
+        downloadBadge.textColor = .white
+        downloadBadge.backgroundColor = .systemRed
+        downloadBadge.textAlignment = .center
+        downloadBadge.layer.cornerRadius = 8
+        downloadBadge.layer.masksToBounds = true
+        downloadBadge.isHidden = true
+        downloadBadge.translatesAutoresizingMaskIntoConstraints = false
+        tabBar.addSubview(downloadBadge)
         // 标签按钮（动态创建4个）
         let tabWidth: CGFloat = 50
         let tabFont: CGFloat = 10
@@ -205,10 +229,20 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             tabButtons[2].widthAnchor.constraint(equalToConstant: tabWidth),
             tabButtons[2].heightAnchor.constraint(equalToConstant: 24),
             // 右1：YouTube
-            tabButtons[3].trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -6),
+            tabButtons[3].trailingAnchor.constraint(equalTo: downloadButton.leadingAnchor, constant: -2),
             tabButtons[3].centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             tabButtons[3].widthAnchor.constraint(equalToConstant: tabWidth),
-            tabButtons[3].heightAnchor.constraint(equalToConstant: 24)
+            tabButtons[3].heightAnchor.constraint(equalToConstant: 24),
+            // 下载按钮
+            downloadButton.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -4),
+            downloadButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
+            downloadButton.widthAnchor.constraint(equalToConstant: 22),
+            downloadButton.heightAnchor.constraint(equalToConstant: 22),
+            // 下载角标
+            downloadBadge.topAnchor.constraint(equalTo: downloadButton.topAnchor, constant: -4),
+            downloadBadge.trailingAnchor.constraint(equalTo: downloadButton.trailingAnchor, constant: 2),
+            downloadBadge.widthAnchor.constraint(equalToConstant: 16),
+            downloadBadge.heightAnchor.constraint(equalToConstant: 16)
         ])
     }
     // MARK: - 网址输入框
@@ -1706,6 +1740,146 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         currentFindIndex = 0
         totalFindCount = 0
     }
+// MARK: - 下载功能扩展
+extension ViewController {
+    @objc func downloadButtonTapped() {
+        let panel = DownloadPanelViewController()
+        panel.modalPresentationStyle = .pageSheet
+        if let sheet = panel.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = false
+        }
+        present(panel, animated: true)
+    }
+    
+    func updateDownloadBadge() {
+        let count = DownloadManager.shared.activeCount()
+        if count > 0 {
+            downloadBadge.text = "\(count)"
+            downloadBadge.isHidden = false
+            // 呼吸动画
+            UIView.animate(withDuration: 0.8, delay: 0, options: [.autoreverse, .repeat], animations: {
+                self.downloadBadge.transform = CGAffineTransform(scaleX: 1.2, y: 1.2)
+            }, completion: nil)
+        } else {
+            downloadBadge.isHidden = true
+            downloadBadge.layer.removeAllAnimations()
+        }
+    }
+    
+    // MARK: - 下载确认条
+    func showDownloadConfirm(url: String, fileName: String) {
+        hideDownloadConfirm()
+        pendingDownloadURL = url
+        pendingDownloadName = fileName
+        
+        let bar = UIView()
+        bar.backgroundColor = .secondarySystemBackground
+        bar.layer.cornerRadius = 12
+        bar.layer.shadowColor = UIColor.black.cgColor
+        bar.layer.shadowOffset = CGSize(width: 0, height: -2)
+        bar.layer.shadowRadius = 8
+        bar.layer.shadowOpacity = 0.15
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bar)
+        confirmBar = bar
+        
+        let icon = UIImageView(image: UIImage(systemName: "arrow.down.circle.fill"))
+        icon.tintColor = .systemBlue
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(icon)
+        
+        let nameLabel = UILabel()
+        nameLabel.text = fileName
+        nameLabel.font = .systemFont(ofSize: 14, weight: .medium)
+        nameLabel.lineBreakMode = .byTruncatingMiddle
+        nameLabel.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(nameLabel)
+        
+        let cancelBtn = UIButton(type: .system)
+        cancelBtn.setTitle("取消", for: .normal)
+        cancelBtn.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
+        cancelBtn.tintColor = .systemGray
+        cancelBtn.translatesAutoresizingMaskIntoConstraints = false
+        cancelBtn.addTarget(self, action: #selector(cancelDownloadConfirm), for: .touchUpInside)
+        bar.addSubview(cancelBtn)
+        
+        let downloadBtn = UIButton(type: .system)
+        downloadBtn.setTitle("下载", for: .normal)
+        downloadBtn.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        downloadBtn.tintColor = .systemBlue
+        downloadBtn.translatesAutoresizingMaskIntoConstraints = false
+        downloadBtn.addTarget(self, action: #selector(confirmDownload), for: .touchUpInside)
+        bar.addSubview(downloadBtn)
+        
+        NSLayoutConstraint.activate([
+            bar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            bar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            bar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+            bar.heightAnchor.constraint(equalToConstant: 50),
+            
+            icon.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 12),
+            icon.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 24),
+            icon.heightAnchor.constraint(equalToConstant: 24),
+            
+            nameLabel.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
+            nameLabel.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            nameLabel.trailingAnchor.constraint(equalTo: cancelBtn.leadingAnchor, constant: -8),
+            
+            cancelBtn.trailingAnchor.constraint(equalTo: downloadBtn.leadingAnchor, constant: -12),
+            cancelBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            cancelBtn.widthAnchor.constraint(equalToConstant: 44),
+            
+            downloadBtn.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -12),
+            downloadBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            downloadBtn.widthAnchor.constraint(equalToConstant: 44),
+        ])
+        
+        // 弹出动画
+        bar.transform = CGAffineTransform(translationX: 0, y: 80)
+        UIView.animate(withDuration: 0.3) {
+            bar.transform = .identity
+        }
+    }
+    
+    @objc private func cancelDownloadConfirm() {
+        hideDownloadConfirm()
+    }
+    
+    @objc private func confirmDownload() {
+        guard let url = pendingDownloadURL, let name = pendingDownloadName else { return }
+        DownloadManager.shared.startDownload(url: url, fileName: name)
+        hideDownloadConfirm()
+        showToast("开始下载：\(name)")
+    }
+    
+    func hideDownloadConfirm() {
+        guard let bar = confirmBar else { return }
+        UIView.animate(withDuration: 0.2, animations: {
+            bar.transform = CGAffineTransform(translationX: 0, y: 80)
+        }) { _ in
+            bar.removeFromSuperview()
+        }
+        confirmBar = nil
+        pendingDownloadURL = nil
+        pendingDownloadName = nil
+    }
+    
+    // MARK: - 下载链接判断
+    func isDownloadURL(_ url: URL, mimeType: String?) -> Bool {
+        let downloadExtensions = ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "zip", "rar", "7z", "mp3", "mp4", "mov", "avi", "mkv", "apk", "exe", "dmg", "pkg", "csv", "txt", "epub", "mobi"]
+        let ext = url.pathExtension.lowercased()
+        if downloadExtensions.contains(ext) { return true }
+        if let mime = mimeType?.lowercased() {
+            if mime.contains("application/octet-stream") || mime.contains("application/pdf") || mime.contains("application/zip") || mime.contains("application/x-rar") || mime.contains("video/") || mime.contains("audio/") {
+                return true
+            }
+        }
+        return false
+    }
+}
+
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
         guard gesture.view === currentWebView else { return }
         let location = gesture.location(in: view)
@@ -2000,18 +2174,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
         let response = navigationResponse.response
         let fileName = response.suggestedFilename ?? downloadURL.lastPathComponent
-        let fileSize = (response as? HTTPURLResponse)?.expectedContentLength ?? -1
-        let sizeStr = fileSize > 0 ? ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file) : "未知大小"
-        let alert = UIAlertController(
-            title: "下载文件",
-            message: "文件名：\(fileName)\n大小：\(sizeStr)\n将跳转默认浏览器下载",
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: "打开浏览器", style: .default) { _ in
-            UIApplication.shared.open(downloadURL)
-        })
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        self.present(alert, animated: true)
+        let mime = response.mimeType ?? ""
+        // 显示底部下载确认条
+        DispatchQueue.main.async {
+            self.showDownloadConfirm(url: downloadURL.absoluteString, fileName: fileName)
+        }
         decisionHandler(.cancel)
     }
     // MARK: - WKNavigationDelegate
