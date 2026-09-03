@@ -15,7 +15,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private let customTitlesKey = "customWindowTitles"
     private let customURLsKey = "customWindowURLs"
     private let tabBarHeight: CGFloat = 28
-    private let translateButtonSize: CGFloat = 18
+    private let translateButtonSize: CGFloat = 17
     private let maxTranslateSegments = 5000
     private let refreshTriggerDistance: CGFloat = 70
     // MARK: - UI 组件
@@ -152,7 +152,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             tabButtons[1].widthAnchor.constraint(equalToConstant: 42),
             tabButtons[1].heightAnchor.constraint(equalToConstant: 24),
             // 翻译按钮：CF右边距10px
-            translateButton.leadingAnchor.constraint(equalTo: tabButtons[1].trailingAnchor, constant: 3),
+            translateButton.leadingAnchor.constraint(equalTo: tabButtons[1].trailingAnchor, constant: 1),
             translateButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             translateButton.widthAnchor.constraint(equalToConstant: translateButtonSize),
             translateButton.heightAnchor.constraint(equalToConstant: translateButtonSize),
@@ -207,9 +207,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         guard gesture.state == .began, let btn = gesture.view as? UIButton else { return }
         switch btn.tag {
         case 0: saveBookmark()       // GitHub：收藏当前页面
-        case 1: openBookmarks()      // CF：打开书签列表
-        case 2: clearCurrentSiteCache() // Google：清除当前站点缓存
-        case 3: manageWindows()      // YouTube：管理窗口配置
+        case 1: clearCurrentSiteCache() // CF：清除当前站点缓存
+        case 2: manageWindows()      // Google：管理窗口配置
+        case 3: openBookmarks()      // YouTube：打开书签列表
         default: break
         }
     }
@@ -251,8 +251,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         if let popover = alert.popoverPresentationController {
-            popover.sourceView = tabButtons[1]
-            popover.sourceRect = tabButtons[1].bounds
+            popover.sourceView = tabButtons[3]
+            popover.sourceRect = tabButtons[3].bounds
         }
         present(alert, animated: true)
     }
