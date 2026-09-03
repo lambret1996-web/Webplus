@@ -351,8 +351,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             // OperationQueue 并发翻译（后台线程，不阻塞主线程）
             self.translateWithOperationQueue(texts) { [weak self] translations in
                 guard let self = self else { return }
-                // 分批应用翻译结果到页面（避免一次性注入超大JS）
-                self.applyTranslationsInBatches(translations, to: targetWebView)
+                // 一次性应用翻译结果（TreeWalker只遍历一次，在文本修改前完成所有匹配，顺序正确）
+                self.applyTranslations(translations, to: targetWebView)
                 self.isTranslating = false
                 self.updateTranslateButtonState()
             }
@@ -452,64 +452,38 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             }.resume()
         }.resume()
     }
-    /// 分批应用翻译结果到页面（每批200段，避免一次性注入超大JS字符串导致内存问题）
-    private func applyTranslationsInBatches(_ translations: [String], to webView: WKWebView) {
-        let batchSize = 200
-        var offset = 0
-
-        func applyNextBatch() {
-            if offset >= translations.count { return }
-            let end = min(offset + batchSize, translations.count)
-            let batch = Array(translations[offset..<end])
-
-            guard let jsonData = try? JSONSerialization.data(withJSONObject: batch),
-                  let jsonStr = String(data: jsonData, encoding: .utf8) else {
-                offset = end
-                applyNextBatch()
-                return
-            }
-
-            let js = """
-            (function() {
-                var batch = \(jsonStr);
-                var offset = \(offset);
-                var idx = 0;
-                var globalIdx = offset;
-                var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-                    acceptNode: function(node) {
-                        if (!node.textContent || !node.textContent.trim()) return NodeFilter.FILTER_REJECT;
-                        var p = node.parentElement;
-                        if (!p) return NodeFilter.FILTER_REJECT;
-                        var t = p.tagName.toLowerCase();
-                        if (t==='script'||t==='style'||t==='noscript'||t==='textarea'||t==='input'||t==='select'||t==='option'||t==='code'||t==='pre') return NodeFilter.FILTER_REJECT;
-                        if (/[\\u4e00-\\u9fa5]/.test(node.textContent)) return NodeFilter.FILTER_REJECT;
-                        if (node.textContent.trim().length < 2) return NodeFilter.FILTER_REJECT;
-                        return NodeFilter.FILTER_ACCEPT;
-                    }
-                });
-                var n;
-                while ((n = walker.nextNode())) {
-                    if (globalIdx >= offset && globalIdx < offset + batch.length && idx < batch.length) {
-                        if (batch[idx]) n.textContent = batch[idx];
-                        idx++;
-                    }
-                    globalIdx++;
-                    if (globalIdx >= offset + batch.length) break;
+    /// 一次性应用翻译结果到页面（TreeWalker只遍历一次，在文本修改前完成所有匹配，避免分批应用时的顺序错乱）
+    private func applyTranslations(_ translations: [String], to webView: WKWebView) {
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: translations),
+              let jsonStr = String(data: jsonData, encoding: .utf8) else { return }
+        let js = """
+        (function() {
+            var translations = \(jsonStr);
+            var idx = 0;
+            var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+                acceptNode: function(node) {
+                    if (!node.textContent || !node.textContent.trim()) return NodeFilter.FILTER_REJECT;
+                    var p = node.parentElement;
+                    if (!p) return NodeFilter.FILTER_REJECT;
+                    var t = p.tagName.toLowerCase();
+                    if (t==='script'||t==='style'||t==='noscript'||t==='textarea'||t==='input'||t==='select'||t==='option'||t==='code'||t==='pre') return NodeFilter.FILTER_REJECT;
+                    if (/[\\u4e00-\\u9fa5]/.test(node.textContent)) return NodeFilter.FILTER_REJECT;
+                    if (node.textContent.trim().length < 2) return NodeFilter.FILTER_REJECT;
+                    return NodeFilter.FILTER_ACCEPT;
                 }
-                return 'ok';
-            })();
-            """
-
-            webView.evaluateJavaScript(js) { _, _ in
-                offset = end
-                // 延迟一帧再应用下一批，避免阻塞JS线程
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
-                    applyNextBatch()
+            });
+            var n;
+            while ((n = walker.nextNode())) {
+                if (idx < translations.length && translations[idx]) {
+                    n.textContent = translations[idx];
                 }
+                idx++;
             }
-        }
-
-        applyNextBatch()
+            window.__browser_translate_done__ = true;
+            return 'applied:' + idx;
+        })();
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
     }
     /// 恢复原文
     private func restoreOriginalText() {
