@@ -249,7 +249,7 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
             var fileName = task.fileName
             if fileName.isEmpty { fileName = "download_\(Int(Date().timeIntervalSince1970))" }
             // 清理文件名中的非法字符
-            fileName = fileName.components(separatedBy: CharacterSet(charactersIn: "/\\?%*|"<>:")).joined(separator: "_")
+            fileName = fileName.components(separatedBy: CharacterSet(charactersIn: "/\\?%*|\"<>:")).joined(separator: "_")
             var destURL = downloadsDir.appendingPathComponent(fileName)
             // 避免重名
             var counter = 1
