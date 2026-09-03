@@ -1147,41 +1147,83 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     // MARK: - 自定义广告域名管理
     private func manageCustomAdDomains() {
-        let alert = UIAlertController(title: "自定义广告黑名单", message: "当前\(customAdDomains.count)条，可直接粘贴完整URL", preferredStyle: .alert)
+        showCustomAdManager()
+    }
+    /// 统一的自定义黑名单管理界面：列表+添加+删除+清空
+    private func showCustomAdManager() {
+        let alert = UIAlertController(
+            title: "自定义广告黑名单",
+            message: "共 \(customAdDomains.count) 条，点击域名可删除",
+            preferredStyle: .actionSheet
+        )
+        // 域名列表（显示可读格式，点击删除）
+        for (i, domain) in customAdDomains.enumerated() {
+            let readable = domain.replacingOccurrences(of: "\\.", with: ".")
+            alert.addAction(UIAlertAction(title: "🗑 \(readable)", style: .destructive) { _ in
+                self.customAdDomains.remove(at: i)
+                UserDefaults.standard.set(self.customAdDomains, forKey: self.customAdDomainsKey)
+                self.compileAdBlockRules()
+                self.showToast("已删除：\(readable)")
+                // 删除后重新弹出管理界面
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self.showCustomAdManager()
+                }
+            })
+        }
+        // 添加新域名
+        alert.addAction(UIAlertAction(title: "➕ 添加新域名", style: .default) { _ in
+            self.showAddDomainAlert()
+        })
+        // 清空全部
+        if !customAdDomains.isEmpty {
+            alert.addAction(UIAlertAction(title: "🗑 清空全部", style: .destructive) { _ in
+                let confirm = UIAlertController(title: "确认清空", message: "将删除全部 \(self.customAdDomains.count) 条自定义域名", preferredStyle: .alert)
+                confirm.addAction(UIAlertAction(title: "确认清空", style: .destructive) { _ in
+                    self.customAdDomains.removeAll()
+                    UserDefaults.standard.set(self.customAdDomains, forKey: self.customAdDomainsKey)
+                    self.compileAdBlockRules()
+                    self.showToast("已清空全部自定义域名")
+                })
+                confirm.addAction(UIAlertAction(title: "取消", style: .cancel))
+                self.present(confirm, animated: true)
+            })
+        }
+        alert.addAction(UIAlertAction(title: "完成", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = translateButton
+            popover.sourceRect = translateButton.bounds
+        }
+        present(alert, animated: true)
+    }
+    /// 添加域名弹窗
+    private func showAddDomainAlert() {
+        let alert = UIAlertController(title: "添加域名", message: "可直接粘贴完整URL，自动清洗", preferredStyle: .alert)
         alert.addTextField { tf in
-            tf.placeholder = "输入域名或完整URL，如 ads.example.com"
-            tf.font = .systemFont(ofSize: 12)
+            tf.placeholder = "输入域名或完整URL"
+            tf.font = .systemFont(ofSize: 14)
             tf.autocapitalizationType = .none
             tf.autocorrectionType = .no
+            tf.keyboardType = .URL
         }
         alert.addAction(UIAlertAction(title: "添加", style: .default) { _ in
             guard let input = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !input.isEmpty else { return }
-            // 智能清洗用户输入：自动去掉协议、www前缀、路径、端口
-            var domain = input.lowercased()
-            // 去掉 http:// https://
-            domain = domain.replacingOccurrences(of: "https://", with: "")
-            domain = domain.replacingOccurrences(of: "http://", with: "")
-            // 去掉 www.
-            if domain.hasPrefix("www.") {
-                domain = String(domain.dropFirst(4))
-            }
-            // 去掉路径和查询参数（第一个/之后的内容）
-            if let slashRange = domain.range(of: "/") {
-                domain = String(domain[..<slashRange.lowerBound])
-            }
-            // 去掉端口号
-            if let colonRange = domain.range(of: ":") {
-                domain = String(domain[..<colonRange.lowerBound])
-            }
-            // 去掉末尾的点
-            domain = domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            // 验证是否是有效域名（至少包含一个点）
-            guard domain.contains(".") else {
-                self.showToast("无效域名，请输入如 example.com")
+                  !input.isEmpty else {
+                self.showCustomAdManager()
                 return
             }
-            // 自动转义点号（如果用户没转义）
+            // 智能清洗
+            var domain = input.lowercased()
+            domain = domain.replacingOccurrences(of: "https://", with: "")
+            domain = domain.replacingOccurrences(of: "http://", with: "")
+            if domain.hasPrefix("www.") { domain = String(domain.dropFirst(4)) }
+            if let slashRange = domain.range(of: "/") { domain = String(domain[..<slashRange.lowerBound]) }
+            if let colonRange = domain.range(of: ":") { domain = String(domain[..<colonRange.lowerBound]) }
+            domain = domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            guard domain.contains(".") else {
+                self.showToast("无效域名，请输入如 example.com")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.showAddDomainAlert() }
+                return
+            }
             if !domain.contains("\\.") {
                 domain = domain.replacingOccurrences(of: ".", with: "\\.")
             }
@@ -1189,35 +1231,19 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 self.customAdDomains.append(domain)
                 UserDefaults.standard.set(self.customAdDomains, forKey: self.customAdDomainsKey)
                 self.compileAdBlockRules()
-                self.showToast("已添加：\(domain)")
+                let readable = domain.replacingOccurrences(of: "\\.", with: ".")
+                self.showToast("已添加：\(readable)")
             } else {
                 self.showToast("该域名已存在")
             }
+            // 添加后返回管理界面
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self.showCustomAdManager()
+            }
         })
-        // 查看/删除列表
-        if !customAdDomains.isEmpty {
-            alert.addAction(UIAlertAction(title: "查看/删除已有域名", style: .default) { _ in
-                self.showCustomDomainList()
-            })
-        }
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        present(alert, animated: true)
-    }
-    private func showCustomDomainList() {
-        let alert = UIAlertController(title: "自定义域名列表", message: nil, preferredStyle: .actionSheet)
-        for (i, domain) in customAdDomains.enumerated() {
-            alert.addAction(UIAlertAction(title: "删除：\(domain)", style: .destructive) { _ in
-                self.customAdDomains.remove(at: i)
-                UserDefaults.standard.set(self.customAdDomains, forKey: self.customAdDomainsKey)
-                self.compileAdBlockRules()
-                self.showToast("已删除")
-            })
-        }
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        if let popover = alert.popoverPresentationController {
-            popover.sourceView = translateButton
-            popover.sourceRect = translateButton.bounds
-        }
+        alert.addAction(UIAlertAction(title: "返回列表", style: .cancel) { _ in
+            self.showCustomAdManager()
+        })
         present(alert, animated: true)
     }
     // MARK: - UA切换
