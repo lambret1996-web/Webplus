@@ -41,6 +41,20 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // MARK: - 翻译相关
     private var isTranslated: [Bool] = [false, false, false, false]
     private var isTranslating = false
+    // MARK: - 广告拦截配置
+    private var adBlockEnabled: Bool = true
+    private var customAdDomains: [String] = []
+    private let adBlockKey = "adBlockEnabled"
+    private let customAdDomainsKey = "customAdDomains"
+    // MARK: - UA切换
+    private var currentUAIndex: Int = 0
+    private let uaIndexKey = "currentUAIndex"
+    private let uaPresets = [
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+    ]
+    private let uaNames = ["默认移动端", "桌面版", "Safari原版"]
     // MARK: - 生命周期
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -349,6 +363,17 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         if let bm = UserDefaults.standard.stringArray(forKey: bookmarksKey) {
             bookmarks = bm
         }
+        // 广告拦截配置
+        adBlockEnabled = UserDefaults.standard.bool(forKey: adBlockKey)
+        if !UserDefaults.standard.object(forKey: adBlockKey) {
+            adBlockEnabled = true // 默认开启
+        }
+        if let custom = UserDefaults.standard.stringArray(forKey: customAdDomainsKey) {
+            customAdDomains = custom
+        }
+        // UA配置
+        currentUAIndex = UserDefaults.standard.integer(forKey: uaIndexKey)
+        if currentUAIndex >= uaPresets.count { currentUAIndex = 0 }
     }
     private func saveCustomConfig() {
         UserDefaults.standard.set(windowTitles, forKey: customTitlesKey)
@@ -770,7 +795,20 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             "oflow\\.com"
         ]
         var rules: [[String: Any]] = []
-        for domain in adDomains {
+        // 广告拦截总开关：关闭时移除所有规则
+        guard adBlockEnabled else {
+            WKContentRuleListStore.default().removeContentRuleList(forIdentifier: "AdBlockRules") { _ in
+                DispatchQueue.main.async {
+                    for wv in self.webViews {
+                        wv.configuration.userContentController.removeAllContentRuleLists()
+                    }
+                }
+            }
+            return
+        }
+        // 合并内置黑名单 + 用户自定义域名
+        let allDomains = adDomains + customAdDomains
+        for domain in allDomains {
             rules.append([
                 "trigger": [
                     "url-filter": domain,
@@ -909,6 +947,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 webView.bottomAnchor.constraint(equalTo: webViewContainer.bottomAnchor)
             ])
             webView.addObserver(self, forKeyPath: #keyPath(WKWebView.estimatedProgress), options: .new, context: nil)
+            // 应用自定义UA
+            webView.customUserAgent = uaPresets[currentUAIndex]
             webViews.append(webView)
             setupCustomRefresh(for: webView, index: i)
         }
@@ -1038,6 +1078,16 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         let translateDoubleTap = UITapGestureRecognizer(target: self, action: #selector(handleTranslateDoubleTap(_:)))
         translateDoubleTap.numberOfTapsRequired = 2
         translateButton.addGestureRecognizer(translateDoubleTap)
+        // 长按翻译按钮2秒→弹出设置菜单
+        let translateLongPress = UILongPressGestureRecognizer(target: self, action: #selector(handleTranslateLongPress(_:)))
+        translateLongPress.minimumPressDuration = 2.0
+        translateButton.addGestureRecognizer(translateLongPress)
+        // 屏幕底部中央长按2秒→网页内文字搜索
+        let bottomCenterLongPress = UILongPressGestureRecognizer(target: self, action: #selector(handleBottomCenterLongPress(_:)))
+        bottomCenterLongPress.minimumPressDuration = 2.0
+        bottomCenterLongPress.cancelsTouchesInView = false
+        bottomCenterLongPress.delegate = self
+        view.addGestureRecognizer(bottomCenterLongPress)
     }
     // MARK: - 双击手势：左下角到底部，右下角到顶部
     @objc private func handleScreenDoubleTap(_ gesture: UITapGestureRecognizer) {
@@ -1058,6 +1108,209 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     @objc private func handleTranslateDoubleTap(_ gesture: UITapGestureRecognizer) {
         currentWebView.reload()
         showToast("已刷新")
+    }
+    // MARK: - 长按翻译按钮→设置菜单
+    @objc private func handleTranslateLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        let alert = UIAlertController(title: "浏览器设置", message: nil, preferredStyle: .actionSheet)
+        // 广告拦截开关
+        let adBlockTitle = adBlockEnabled ? "广告拦截：已开启（点击关闭）" : "广告拦截：已关闭（点击开启）"
+        alert.addAction(UIAlertAction(title: adBlockTitle, style: .default) { _ in
+            self.toggleAdBlock()
+        })
+        // 自定义广告域名
+        alert.addAction(UIAlertAction(title: "自定义广告黑名单", style: .default) { _ in
+            self.manageCustomAdDomains()
+        })
+        // UA切换
+        let uaTitle = "UA切换（当前：\(uaNames[currentUAIndex])）"
+        alert.addAction(UIAlertAction(title: uaTitle, style: .default) { _ in
+            self.switchUA()
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = translateButton
+            popover.sourceRect = translateButton.bounds
+        }
+        present(alert, animated: true)
+    }
+    // MARK: - 广告拦截开关
+    private func toggleAdBlock() {
+        adBlockEnabled.toggle()
+        UserDefaults.standard.set(adBlockEnabled, forKey: adBlockKey)
+        compileAdBlockRules()
+        showToast(adBlockEnabled ? "广告拦截已开启" : "广告拦截已关闭")
+    }
+    // MARK: - 自定义广告域名管理
+    private func manageCustomAdDomains() {
+        let alert = UIAlertController(title: "自定义广告黑名单", message: "当前\(customAdDomains.count)条，格式：example\\.com", preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.placeholder = "输入域名，如 ads\\.example\\.com"
+            tf.font = .systemFont(ofSize: 12)
+            tf.autocapitalizationType = .none
+            tf.autocorrectionType = .no
+        }
+        alert.addAction(UIAlertAction(title: "添加", style: .default) { _ in
+            guard let input = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !input.isEmpty else { return }
+            // 自动转义点号
+            var domain = input
+            if !domain.contains("\\.") && domain.contains(".") {
+                domain = domain.replacingOccurrences(of: ".", with: "\\.")
+            }
+            if !self.customAdDomains.contains(domain) {
+                self.customAdDomains.append(domain)
+                UserDefaults.standard.set(self.customAdDomains, forKey: self.customAdDomainsKey)
+                self.compileAdBlockRules()
+                self.showToast("已添加：\(domain)")
+            } else {
+                self.showToast("该域名已存在")
+            }
+        })
+        // 查看/删除列表
+        if !customAdDomains.isEmpty {
+            alert.addAction(UIAlertAction(title: "查看/删除已有域名", style: .default) { _ in
+                self.showCustomDomainList()
+            })
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    private func showCustomDomainList() {
+        let alert = UIAlertController(title: "自定义域名列表", message: nil, preferredStyle: .actionSheet)
+        for (i, domain) in customAdDomains.enumerated() {
+            alert.addAction(UIAlertAction(title: "删除：\(domain)", style: .destructive) { _ in
+                self.customAdDomains.remove(at: i)
+                UserDefaults.standard.set(self.customAdDomains, forKey: self.customAdDomainsKey)
+                self.compileAdBlockRules()
+                self.showToast("已删除")
+            })
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = translateButton
+            popover.sourceRect = translateButton.bounds
+        }
+        present(alert, animated: true)
+    }
+    // MARK: - UA切换
+    private func switchUA() {
+        let alert = UIAlertController(title: "选择User-Agent", message: "注意：切换Safari UA可能触发Cloudflare人机验证", preferredStyle: .actionSheet)
+        for (i, name) in uaNames.enumerated() {
+            let check = i == currentUAIndex ? " ✓" : ""
+            alert.addAction(UIAlertAction(title: "\(name)\(check)", style: .default) { _ in
+                self.currentUAIndex = i
+                UserDefaults.standard.set(i, forKey: self.uaIndexKey)
+                let ua = self.uaPresets[i]
+                for wv in self.webViews {
+                    wv.customUserAgent = ua
+                }
+                self.currentWebView.reload()
+                self.showToast("已切换为：\(name)")
+            })
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = translateButton
+            popover.sourceRect = translateButton.bounds
+        }
+        present(alert, animated: true)
+    }
+    // MARK: - 底部中央长按→网页内文字搜索
+    @objc private func handleBottomCenterLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        let location = gesture.location(in: view)
+        let bottomThreshold: CGFloat = view.bounds.height * 0.8
+        let centerRange: CGFloat = view.bounds.width * 0.2
+        let centerX = view.bounds.width / 2
+        guard location.y > bottomThreshold,
+              abs(location.x - centerX) < centerRange else { return }
+        showFindInPage()
+    }
+    private func showFindInPage() {
+        let alert = UIAlertController(title: "网页内搜索", message: "输入关键词，匹配文字将高亮", preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.placeholder = "输入搜索关键词"
+            tf.returnKeyType = .search
+        }
+        alert.addAction(UIAlertAction(title: "搜索", style: .default) { _ in
+            guard let keyword = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !keyword.isEmpty else { return }
+            self.findInPage(keyword: keyword)
+        })
+        alert.addAction(UIAlertAction(title: "清除高亮", style: .destructive) { _ in
+            self.clearFindHighlight()
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    private func findInPage(keyword: String) {
+        let escaped = keyword.replacingOccurrences(of: "'", with: "\\'")
+        let js = """
+        (function() {
+            // 清除旧高亮
+            document.querySelectorAll('.__browser_find_highlight__').forEach(function(el) {
+                var parent = el.parentNode;
+                while (el.firstChild) parent.insertBefore(el.firstChild, el);
+                parent.removeChild(el);
+                parent.normalize();
+            });
+            if (!'\(escaped)' || '\(escaped)'.length === 0) return 0;
+            var count = 0;
+            var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+            var nodes = [];
+            while (walker.nextNode()) {
+                if (walker.currentNode.nodeValue && walker.currentNode.nodeValue.toLowerCase().indexOf('\(escaped)'.toLowerCase()) !== -1) {
+                    nodes.push(walker.currentNode);
+                }
+            }
+            nodes.forEach(function(node) {
+                var text = node.nodeValue;
+                var lower = text.toLowerCase();
+                var kw = '\(escaped)'.toLowerCase();
+                var idx = 0;
+                var frag = document.createDocumentFragment();
+                while ((idx = lower.indexOf(kw, idx)) !== -1) {
+                    frag.appendChild(document.createTextNode(text.substring(0, idx)));
+                    var mark = document.createElement('mark');
+                    mark.className = '__browser_find_highlight__';
+                    mark.style.backgroundColor = '#ffeb3b';
+                    mark.style.color = '#000';
+                    mark.appendChild(document.createTextNode(text.substring(idx, idx + '\(escaped)'.length)));
+                    frag.appendChild(mark);
+                    text = text.substring(idx + '\(escaped)'.length);
+                    lower = text.toLowerCase();
+                    idx = 0;
+                    count++;
+                }
+                frag.appendChild(document.createTextNode(text));
+                node.parentNode.replaceChild(frag, node);
+            });
+            // 滚动到第一个匹配
+            var first = document.querySelector('.__browser_find_highlight__');
+            if (first) first.scrollIntoView({behavior: 'smooth', block: 'center'});
+            return count;
+        })();
+        """
+        currentWebView.evaluateJavaScript(js) { result, error in
+            if let count = result as? Int {
+                self.showToast(count > 0 ? "找到 \(count) 处匹配" : "未找到匹配内容")
+            } else if let error = error {
+                self.showToast("搜索失败")
+            }
+        }
+    }
+    private func clearFindHighlight() {
+        let js = """
+        document.querySelectorAll('.__browser_find_highlight__').forEach(function(el) {
+            var parent = el.parentNode;
+            while (el.firstChild) parent.insertBefore(el.firstChild, el);
+            parent.removeChild(el);
+            parent.normalize();
+        });
+        """
+        currentWebView.evaluateJavaScript(js, completionHandler: nil)
+        showToast("已清除高亮")
     }
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
         guard gesture.view === currentWebView else { return }
