@@ -32,6 +32,15 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     private let gestureMaxDuration: TimeInterval = 0.5
     // MARK: - 翻译相关
     private var isTranslated: [Bool] = [false, false]
+    private var isTranslating = false
+    /// 带超时的翻译请求会话（10秒请求超时，15秒资源超时）
+    private lazy var translateSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 15
+        config.httpMaximumConnectionsPerHost = 5
+        return URLSession(configuration: config)
+    }()
     // MARK: - 生命周期
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -259,8 +268,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             break
         }
     }
-    // MARK: - 全局翻译功能（原生端发起请求，绕过页面CSP，双窗口均可用）
+    // MARK: - 全局翻译功能（原生端发起请求，后台队列并发，不阻塞主线程）
     @objc private func translateTapped() {
+        // 翻译中禁止重复点击
+        guard !isTranslating else { return }
         if isTranslated[activeIndex] {
             restoreOriginalText()
         } else {
@@ -268,6 +279,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         }
     }
     private func updateTranslateButtonState() {
+        if isTranslating {
+            translateButton.backgroundColor = .systemGray
+            translateButton.setTitle("…", for: .normal)
+            translateButton.isEnabled = false
+            return
+        }
+        translateButton.isEnabled = true
         if isTranslated[activeIndex] {
             translateButton.backgroundColor = .systemGreen
             translateButton.setTitle("原", for: .normal)
@@ -302,9 +320,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         return JSON.stringify({count: texts.length, texts: texts});
     })();
     """
-    /// 启动翻译流程：JS收集文本 → 原生端翻译 → JS应用结果
+    /// 启动翻译流程：锁定目标WebView → JS收集文本 → 后台队列原生端翻译 → JS应用结果
     private func startTranslation() {
-        currentWebView.evaluateJavaScript(collectTextJS) { [weak self] result, error in
+        // 锁定当前窗口，翻译过程中切换标签不影响结果
+        let targetWebView = currentWebView
+        let targetIndex = activeIndex
+
+        targetWebView.evaluateJavaScript(collectTextJS) { [weak self] result, error in
             guard let self = self else { return }
             if let error = error {
                 print("收集文本失败: \(error.localizedDescription)")
@@ -319,43 +341,64 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
                 return
             }
             if texts.isEmpty {
-                self.isTranslated[self.activeIndex] = true
+                self.isTranslated[targetIndex] = true
                 self.updateTranslateButtonState()
                 return
             }
-            // 标记翻译中
-            self.isTranslated[self.activeIndex] = true
+            // 标记翻译中，禁用按钮
+            self.isTranslating = true
+            self.isTranslated[targetIndex] = true
             self.updateTranslateButtonState()
-            // 原生端并发翻译（5并发）
-            self.translateTextsNative(texts) { translations in
-                self.applyTranslations(translations)
+
+            // 后台队列执行翻译，不阻塞主线程
+            self.translateTextsNative(texts) { [weak self] translations in
+                guard let self = self else { return }
+                // 应用翻译结果到锁定的目标窗口
+                self.applyTranslations(translations, to: targetWebView)
+                self.isTranslating = false
+                self.updateTranslateButtonState()
             }
         }
     }
-    /// 原生端批量翻译：MyMemory首选 → 有道降级，5并发
+    /// 原生端批量翻译：后台队列执行，5并发，NSLock保护数组，MyMemory→有道双源降级
     private func translateTextsNative(_ texts: [String], completion: @escaping ([String]) -> Void) {
+        let lock = NSLock()
         var results = Array(repeating: "", count: texts.count)
         let group = DispatchGroup()
         let semaphore = DispatchSemaphore(value: 5)
-        for (i, text) in texts.enumerated() {
-            semaphore.wait()
-            group.enter()
-            translateSingleNative(text) { translated in
-                results[i] = translated ?? text
-                group.leave()
-                semaphore.signal()
+
+        // 关键：在后台队列执行 semaphore.wait()，绝不阻塞主线程
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else {
+                DispatchQueue.main.async { completion(texts) }
+                return
+            }
+            for (i, text) in texts.enumerated() {
+                semaphore.wait()
+                group.enter()
+                self.translateSingleNative(text) { translated in
+                    lock.lock()
+                    results[i] = translated ?? text
+                    lock.unlock()
+                    group.leave()
+                    semaphore.signal()
+                }
+            }
+            group.wait()
+            DispatchQueue.main.async {
+                completion(results)
             }
         }
-        group.notify(queue: .main) {
-            completion(results)
-        }
     }
-    /// 原生端单段翻译：MyMemory → 有道双源降级
+    /// 原生端单段翻译：MyMemory → 有道双源降级，使用带超时的会话
     private func translateSingleNative(_ text: String, completion: @escaping (String?) -> Void) {
         let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
         // 源1：MyMemory
-        let url1 = URL(string: "https://api.mymemory.translated.net/get?q=\(encoded)&langpair=autodetect|zh-CN")!
-        URLSession.shared.dataTask(with: url1) { data, _, error in
+        guard let url1 = URL(string: "https://api.mymemory.translated.net/get?q=\(encoded)&langpair=autodetect|zh-CN") else {
+            completion(nil)
+            return
+        }
+        translateSession.dataTask(with: url1) { data, _, error in
             if let data = data, error == nil,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let status = json["responseStatus"] as? Int, status == 200,
@@ -366,8 +409,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
                 return
             }
             // 源2：有道翻译
-            let url2 = URL(string: "https://fanyi.youdao.com/translate?&doctype=json&type=AUTO&i=\(encoded)")!
-            URLSession.shared.dataTask(with: url2) { data, _, _ in
+            guard let url2 = URL(string: "https://fanyi.youdao.com/translate?&doctype=json&type=AUTO&i=\(encoded)") else {
+                completion(nil)
+                return
+            }
+            self.translateSession.dataTask(with: url2) { data, _, _ in
                 if let data = data,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let code = json["errorCode"] as? Int, code == 0,
@@ -387,8 +433,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             }.resume()
         }.resume()
     }
-    /// JS：将翻译结果应用到页面对应文本节点
-    private func applyTranslations(_ translations: [String]) {
+    /// JS：将翻译结果应用到指定WebView的页面对应文本节点
+    private func applyTranslations(_ translations: [String], to webView: WKWebView) {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: translations),
               let jsonStr = String(data: jsonData, encoding: .utf8) else { return }
         let applyJS = """
@@ -418,10 +464,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             return 'applied';
         })();
         """
-        currentWebView.evaluateJavaScript(applyJS, completionHandler: nil)
+        webView.evaluateJavaScript(applyJS, completionHandler: nil)
     }
     /// 恢复原文：调用页面内保存的原文
     private func restoreOriginalText() {
+        let targetWebView = currentWebView
+        let targetIndex = activeIndex
         let js = """
         (function() {
             var all = document.querySelectorAll('*');
@@ -438,9 +486,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             return 'restored';
         })();
         """
-        currentWebView.evaluateJavaScript(js) { [weak self] result, error in
+        targetWebView.evaluateJavaScript(js) { [weak self] result, error in
             guard let self = self else { return }
-            self.isTranslated[self.activeIndex] = false
+            self.isTranslated[targetIndex] = false
             self.updateTranslateButtonState()
         }
     }
