@@ -10,9 +10,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     /// 窗口标签默认名称
     private let windowTitles: [String] = ["窗口一", "窗口二"]
     /// 底部工具栏高度
-    private let tabBarHeight: CGFloat = 72
+    private let tabBarHeight: CGFloat = 56
     /// 翻译按钮尺寸（圆形）
-    private let translateButtonSize: CGFloat = 60
+    private let translateButtonSize: CGFloat = 48
     /// 单次翻译最大文本段数（防止超大页面内存溢出）
     private let maxTranslateSegments = 5000
     // MARK: - UI 组件
@@ -69,53 +69,60 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             separator.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor),
             separator.heightAnchor.constraint(equalToConstant: 0.5)
         ])
-        let tabLeft = createTabButton(title: windowTitles[0], tag: 0)
-        tabBar.addSubview(tabLeft)
-        tabButtons.append(tabLeft)
-        let tabRight = createTabButton(title: windowTitles[1], tag: 1)
-        tabBar.addSubview(tabRight)
-        tabButtons.append(tabRight)
-        translateButton = UIButton(type: .system)
+        // 先创建翻译按钮（底层）
+        translateButton = UIButton(type: .custom)
         translateButton.setTitle("译", for: .normal)
-        translateButton.titleLabel?.font = .systemFont(ofSize: 22, weight: .bold)
+        translateButton.titleLabel?.font = .systemFont(ofSize: 20, weight: .bold)
         translateButton.backgroundColor = .systemBlue
         translateButton.setTitleColor(.white, for: .normal)
         translateButton.layer.cornerRadius = translateButtonSize / 2
         translateButton.layer.shadowColor = UIColor.systemBlue.cgColor
-        translateButton.layer.shadowOffset = CGSize(width: 0, height: 4)
-        translateButton.layer.shadowRadius = 8
-        translateButton.layer.shadowOpacity = 0.3
+        translateButton.layer.shadowOffset = CGSize(width: 0, height: 2)
+        translateButton.layer.shadowRadius = 6
+        translateButton.layer.shadowOpacity = 0.25
         translateButton.translatesAutoresizingMaskIntoConstraints = false
         translateButton.addTarget(self, action: #selector(translateTapped), for: .touchUpInside)
         tabBar.addSubview(translateButton)
+
+        // 再创建标签按钮（上层，确保可见）
+        let tabLeft = UIButton(type: .custom)
+        tabLeft.setTitle("窗口一", for: .normal)
+        tabLeft.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        tabLeft.tag = 0
+        tabLeft.layer.cornerRadius = 16
+        tabLeft.backgroundColor = .systemBlue
+        tabLeft.setTitleColor(.white, for: .normal)
+        tabLeft.translatesAutoresizingMaskIntoConstraints = false
+        tabLeft.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
+        tabBar.addSubview(tabLeft)
+        tabButtons.append(tabLeft)
+
+        let tabRight = UIButton(type: .custom)
+        tabRight.setTitle("窗口二", for: .normal)
+        tabRight.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        tabRight.tag = 1
+        tabRight.layer.cornerRadius = 16
+        tabRight.backgroundColor = .darkGray
+        tabRight.setTitleColor(.white, for: .normal)
+        tabRight.translatesAutoresizingMaskIntoConstraints = false
+        tabRight.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
+        tabBar.addSubview(tabRight)
+        tabButtons.append(tabRight)
+
         NSLayoutConstraint.activate([
-            tabLeft.leadingAnchor.constraint(equalTo: tabBar.leadingAnchor, constant: 20),
-            tabLeft.centerYAnchor.constraint(equalTo: tabBar.topAnchor, constant: tabBarHeight / 2),
-            tabLeft.widthAnchor.constraint(equalToConstant: 84),
+            tabLeft.leadingAnchor.constraint(equalTo: tabBar.leadingAnchor, constant: 12),
+            tabLeft.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
+            tabLeft.widthAnchor.constraint(equalToConstant: 70),
             tabLeft.heightAnchor.constraint(equalToConstant: 32),
-            tabRight.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -20),
-            tabRight.centerYAnchor.constraint(equalTo: tabBar.topAnchor, constant: tabBarHeight / 2),
-            tabRight.widthAnchor.constraint(equalToConstant: 84),
+            tabRight.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -12),
+            tabRight.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
+            tabRight.widthAnchor.constraint(equalToConstant: 70),
             tabRight.heightAnchor.constraint(equalToConstant: 32),
             translateButton.centerXAnchor.constraint(equalTo: tabBar.centerXAnchor),
-            translateButton.centerYAnchor.constraint(equalTo: tabBar.topAnchor, constant: tabBarHeight / 2),
+            translateButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             translateButton.widthAnchor.constraint(equalToConstant: translateButtonSize),
             translateButton.heightAnchor.constraint(equalToConstant: translateButtonSize)
         ])
-    }
-    private func createTabButton(title: String, tag: Int) -> UIButton {
-        let button = UIButton(type: .system)
-        button.setTitle(title, for: .normal)
-        button.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
-        button.tag = tag
-        button.layer.cornerRadius = 16
-        button.layer.masksToBounds = true
-        button.layer.borderWidth = 1
-        button.layer.borderColor = UIColor.separator.cgColor
-        button.backgroundColor = .secondarySystemFill
-        button.setTitleColor(.label, for: .normal)
-        button.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
-        return button
     }
     @objc private func tabTapped(_ sender: UIButton) {
         switchToTab(index: sender.tag)
@@ -124,13 +131,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         activeIndex = index
         for (i, button) in tabButtons.enumerated() {
             if i == index {
-                button.backgroundColor = .systemBlue.withAlphaComponent(0.12)
-                button.setTitleColor(.systemBlue, for: .normal)
-                button.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+                button.backgroundColor = .systemBlue
+                button.setTitleColor(.white, for: .normal)
+                button.titleLabel?.font = .systemFont(ofSize: 14, weight: .bold)
             } else {
-                button.backgroundColor = .secondarySystemFill
-                button.setTitleColor(.label, for: .normal)
-                button.titleLabel?.font = .systemFont(ofSize: 14, weight: .regular)
+                button.backgroundColor = .darkGray
+                button.setTitleColor(.white, for: .normal)
+                button.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
             }
         }
         for (i, webView) in webViews.enumerated() {
@@ -138,13 +145,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         }
         updateProgressView()
         updateTranslateButtonState()
-    }
-    private func updateTabTitle(index: Int, title: String) {
-        guard index < tabButtons.count else { return }
-        // 空标题时保持默认标题，避免标签文字被清空
-        let safeTitle = title.isEmpty ? windowTitles[index] : title
-        let displayTitle = safeTitle.count > 6 ? String(safeTitle.prefix(6)) + "…" : safeTitle
-        tabButtons[index].setTitle(displayTitle, for: .normal)
     }
     // MARK: - WebView 容器
     private func setupWebViewContainer() {
@@ -537,9 +537,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if let index = webViews.firstIndex(of: webView), index < refreshControls.count {
             refreshControls[index].endRefreshing()
-        }
-        if let index = webViews.firstIndex(of: webView), let title = webView.title {
-            updateTabTitle(index: index, title: title)
         }
         if let index = webViews.firstIndex(of: webView) {
             isTranslated[index] = false
