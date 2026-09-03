@@ -956,6 +956,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             """
             let throttleScript = WKUserScript(source: throttleJS, injectionTime: .atDocumentStart, forMainFrameOnly: false)
             config.userContentController.addUserScript(throttleScript)
+            // 强制网页可缩放：覆盖viewport禁止缩放的限制
+            let zoomJS = "(function(){var meta=document.querySelector('meta[name=viewport]');if(meta){meta.content='width=device-width,initial-scale=1.0,minimum-scale=0.5,maximum-scale=10.0,user-scalable=yes';}else{var m=document.createElement('meta');m.name='viewport';m.content='width=device-width,initial-scale=1.0,minimum-scale=0.5,maximum-scale=10.0,user-scalable=yes';document.head.appendChild(m);}})();"
+            let zoomScript = WKUserScript(source: zoomJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+            config.userContentController.addUserScript(zoomScript)
             let webView = WKWebView(frame: .zero, configuration: config)
             webView.navigationDelegate = self
             webView.uiDelegate = self
@@ -963,6 +967,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             webView.translatesAutoresizingMaskIntoConstraints = false
             webView.scrollView.bounces = true
             webView.scrollView.delegate = self
+            // 强制缩放范围
+            webView.scrollView.minimumZoomScale = 0.5
+            webView.scrollView.maximumZoomScale = 5.0
             webView.isHidden = (i != 0)
             webViewContainer.addSubview(webView)
             NSLayoutConstraint.activate([
@@ -1667,19 +1674,20 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         scrollToFindIndex()
     }
     private func scrollToFindIndex() {
+        let idx = currentFindIndex
         let js = """
         (function() {
             var all = document.querySelectorAll('.__browser_find_highlight__');
             all.forEach(function(el) { el.style.backgroundColor = '#ffeb3b'; });
-            var target = document.querySelector('.__browser_find_highlight__[data-find-index="\(currentFindIndex)"]');
-            if (target) {
+            if (all.length > 0 && \(idx) >= 0 && \(idx) < all.length) {
+                var target = all[\(idx)];
                 target.style.backgroundColor = '#ff9800';
                 target.scrollIntoView({behavior: 'smooth', block: 'center'});
             }
-            return '\(currentFindIndex+1)';
+            return String(all.length);
         })();
         """
-        currentWebView.evaluateJavaScript(js) { [weak self] _, _ in
+        currentWebView.evaluateJavaScript(js) { [weak self] result, _ in
             DispatchQueue.main.async {
                 self?.findCountLabel?.text = "\((self?.currentFindIndex ?? 0)+1)/\(self?.totalFindCount ?? 0)"
             }
