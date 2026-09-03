@@ -585,6 +585,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
         download.delegate = self
     }
+    /// WKDownloadDelegate 必需方法：决定下载文件的临时保存位置
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileName = suggestedFilename.isEmpty ? "download_\(Int(Date().timeIntervalSince1970))" : suggestedFilename
+        let safeFileName = fileName.replacingOccurrences(of: "/", with: "_")
+        completionHandler(tempDir.appendingPathComponent(safeFileName))
+    }
     func download(_ download: WKDownload, didFinishDownloadingTo location: URL) {
         let fileName = download.originalRequest?.url?.lastPathComponent ?? "download_\(Int(Date().timeIntervalSince1970))"
         let safeFileName = fileName.replacingOccurrences(of: "/", with: "_")
