@@ -49,6 +49,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // MARK: - UA切换
     private var currentUAIndex: Int = 0
     private let uaIndexKey = "currentUAIndex"
+    // MARK: - 网页搜索
+    private var currentFindIndex: Int = 0
+    private var totalFindCount: Int = 0
     private let uaPresets = [
         "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15",
@@ -1079,16 +1082,16 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         let translateDoubleTap = UITapGestureRecognizer(target: self, action: #selector(handleTranslateDoubleTap(_:)))
         translateDoubleTap.numberOfTapsRequired = 2
         translateButton.addGestureRecognizer(translateDoubleTap)
-        // 长按翻译按钮2秒→弹出设置菜单
+        // 长按翻译按钮0.8秒→弹出设置菜单
         let translateLongPress = UILongPressGestureRecognizer(target: self, action: #selector(handleTranslateLongPress(_:)))
-        translateLongPress.minimumPressDuration = 2.0
+        translateLongPress.minimumPressDuration = 0.8
         translateButton.addGestureRecognizer(translateLongPress)
-        // 屏幕底部中央长按2秒→网页内文字搜索
-        let bottomCenterLongPress = UILongPressGestureRecognizer(target: self, action: #selector(handleBottomCenterLongPress(_:)))
-        bottomCenterLongPress.minimumPressDuration = 2.0
-        bottomCenterLongPress.cancelsTouchesInView = false
-        bottomCenterLongPress.delegate = self
-        view.addGestureRecognizer(bottomCenterLongPress)
+        // 屏幕底部中央双击→网页内文字搜索
+        let bottomCenterDoubleTap = UITapGestureRecognizer(target: self, action: #selector(handleBottomCenterDoubleTap(_:)))
+        bottomCenterDoubleTap.numberOfTapsRequired = 2
+        bottomCenterDoubleTap.cancelsTouchesInView = false
+        bottomCenterDoubleTap.delegate = self
+        view.addGestureRecognizer(bottomCenterDoubleTap)
     }
     // MARK: - 双击手势：左下角到底部，右下角到顶部
     @objc private func handleScreenDoubleTap(_ gesture: UITapGestureRecognizer) {
@@ -1144,9 +1147,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     // MARK: - 自定义广告域名管理
     private func manageCustomAdDomains() {
-        let alert = UIAlertController(title: "自定义广告黑名单", message: "当前\(customAdDomains.count)条，格式：example\\.com", preferredStyle: .alert)
+        let alert = UIAlertController(title: "自定义广告黑名单", message: "当前\(customAdDomains.count)条，可直接粘贴完整URL", preferredStyle: .alert)
         alert.addTextField { tf in
-            tf.placeholder = "输入域名，如 ads\\.example\\.com"
+            tf.placeholder = "输入域名或完整URL，如 ads.example.com"
             tf.font = .systemFont(ofSize: 12)
             tf.autocapitalizationType = .none
             tf.autocorrectionType = .no
@@ -1154,9 +1157,32 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         alert.addAction(UIAlertAction(title: "添加", style: .default) { _ in
             guard let input = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !input.isEmpty else { return }
-            // 自动转义点号
-            var domain = input
-            if !domain.contains("\\.") && domain.contains(".") {
+            // 智能清洗用户输入：自动去掉协议、www前缀、路径、端口
+            var domain = input.lowercased()
+            // 去掉 http:// https://
+            domain = domain.replacingOccurrences(of: "https://", with: "")
+            domain = domain.replacingOccurrences(of: "http://", with: "")
+            // 去掉 www.
+            if domain.hasPrefix("www.") {
+                domain = String(domain.dropFirst(4))
+            }
+            // 去掉路径和查询参数（第一个/之后的内容）
+            if let slashRange = domain.range(of: "/") {
+                domain = String(domain[..<slashRange.lowerBound])
+            }
+            // 去掉端口号
+            if let colonRange = domain.range(of: ":") {
+                domain = String(domain[..<colonRange.lowerBound])
+            }
+            // 去掉末尾的点
+            domain = domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            // 验证是否是有效域名（至少包含一个点）
+            guard domain.contains(".") else {
+                self.showToast("无效域名，请输入如 example.com")
+                return
+            }
+            // 自动转义点号（如果用户没转义）
+            if !domain.contains("\\.") {
                 domain = domain.replacingOccurrences(of: ".", with: "\\.")
             }
             if !self.customAdDomains.contains(domain) {
@@ -1217,9 +1243,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
         present(alert, animated: true)
     }
-    // MARK: - 底部中央长按→网页内文字搜索
-    @objc private func handleBottomCenterLongPress(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began else { return }
+    // MARK: - 底部中央双击→网页内文字搜索
+    @objc private func handleBottomCenterDoubleTap(_ gesture: UITapGestureRecognizer) {
         let location = gesture.location(in: view)
         let bottomThreshold: CGFloat = view.bounds.height * 0.8
         let centerRange: CGFloat = view.bounds.width * 0.2
@@ -1229,7 +1254,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         showFindInPage()
     }
     private func showFindInPage() {
-        let alert = UIAlertController(title: "网页内搜索", message: "输入关键词，匹配文字将高亮", preferredStyle: .alert)
+        let alert = UIAlertController(title: "网页内搜索", message: totalFindCount > 0 ? "当前 \(currentFindIndex+1)/\(totalFindCount)" : "输入关键词，全部匹配高亮", preferredStyle: .alert)
         alert.addTextField { tf in
             tf.placeholder = "输入搜索关键词"
             tf.returnKeyType = .search
@@ -1239,6 +1264,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                   !keyword.isEmpty else { return }
             self.findInPage(keyword: keyword)
         })
+        alert.addAction(UIAlertAction(title: "↑ 上一个", style: .default) { _ in
+            self.findPrev()
+        })
+        alert.addAction(UIAlertAction(title: "↓ 下一个", style: .default) { _ in
+            self.findNext()
+        })
         alert.addAction(UIAlertAction(title: "清除高亮", style: .destructive) { _ in
             self.clearFindHighlight()
         })
@@ -1246,10 +1277,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         present(alert, animated: true)
     }
     private func findInPage(keyword: String) {
+        currentFindIndex = 0
         let escaped = keyword.replacingOccurrences(of: "'", with: "\\'")
         let js = """
         (function() {
-            // 清除旧高亮
             document.querySelectorAll('.__browser_find_highlight__').forEach(function(el) {
                 var parent = el.parentNode;
                 while (el.firstChild) parent.insertBefore(el.firstChild, el);
@@ -1275,8 +1306,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                     frag.appendChild(document.createTextNode(text.substring(0, idx)));
                     var mark = document.createElement('mark');
                     mark.className = '__browser_find_highlight__';
-                    mark.style.backgroundColor = '#ffeb3b';
+                    mark.setAttribute('data-find-index', count);
+                    mark.style.backgroundColor = count === 0 ? '#ff9800' : '#ffeb3b';
                     mark.style.color = '#000';
+                    mark.style.borderRadius = '2px';
                     mark.appendChild(document.createTextNode(text.substring(idx, idx + '\(escaped)'.length)));
                     frag.appendChild(mark);
                     text = text.substring(idx + '\(escaped)'.length);
@@ -1287,18 +1320,50 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 frag.appendChild(document.createTextNode(text));
                 node.parentNode.replaceChild(frag, node);
             });
-            // 滚动到第一个匹配
             var first = document.querySelector('.__browser_find_highlight__');
             if (first) first.scrollIntoView({behavior: 'smooth', block: 'center'});
             return count;
         })();
         """
-        currentWebView.evaluateJavaScript(js) { result, error in
+        currentWebView.evaluateJavaScript(js) { [weak self] result, error in
             if let count = result as? Int {
-                self.showToast(count > 0 ? "找到 \(count) 处匹配" : "未找到匹配内容")
-            } else if let error = error {
-                self.showToast("搜索失败")
+                self?.totalFindCount = count
+                self?.currentFindIndex = 0
+                if count > 0 {
+                    self?.showToast("找到 \(count) 处，当前第1处")
+                } else {
+                    self?.showToast("未找到匹配内容")
+                }
+            } else {
+                self?.showToast("搜索失败")
             }
+        }
+    }
+    private func findNext() {
+        guard totalFindCount > 0 else { showToast("请先搜索"); return }
+        currentFindIndex = (currentFindIndex + 1) % totalFindCount
+        scrollToFindIndex()
+    }
+    private func findPrev() {
+        guard totalFindCount > 0 else { showToast("请先搜索"); return }
+        currentFindIndex = (currentFindIndex - 1 + totalFindCount) % totalFindCount
+        scrollToFindIndex()
+    }
+    private func scrollToFindIndex() {
+        let js = """
+        (function() {
+            var all = document.querySelectorAll('.__browser_find_highlight__');
+            all.forEach(function(el) { el.style.backgroundColor = '#ffeb3b'; });
+            var target = document.querySelector('.__browser_find_highlight__[data-find-index="\(currentFindIndex)"]');
+            if (target) {
+                target.style.backgroundColor = '#ff9800';
+                target.scrollIntoView({behavior: 'smooth', block: 'center'});
+            }
+            return '\(currentFindIndex+1)';
+        })();
+        """
+        currentWebView.evaluateJavaScript(js) { [weak self] _, _ in
+            self?.showToast("当前第 \((self?.currentFindIndex ?? 0)+1)/\(self?.totalFindCount ?? 0) 处")
         }
     }
     private func clearFindHighlight() {
@@ -1311,6 +1376,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         });
         """
         currentWebView.evaluateJavaScript(js, completionHandler: nil)
+        currentFindIndex = 0
+        totalFindCount = 0
         showToast("已清除高亮")
     }
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
