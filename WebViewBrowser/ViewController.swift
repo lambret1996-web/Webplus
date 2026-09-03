@@ -99,6 +99,32 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         setupGestures()
         switchToTab(index: 0)
         loadInitialPages()
+        // 下载管理回调
+        DownloadManager.shared.onProgress = { [weak self] _ in
+            DispatchQueue.main.async { self?.updateDownloadBadge() }
+        }
+        DownloadManager.shared.onStatusChanged = { [weak self] _ in
+            DispatchQueue.main.async { self?.updateDownloadBadge() }
+        }
+        DownloadManager.shared.onCompleted = { [weak self] task in
+            DispatchQueue.main.async {
+                self?.updateDownloadBadge()
+                let alert = UIAlertController(
+                    title: "下载完成",
+                    message: "\(task.fileName)\n已保存到：文件 App → 本应用 → Downloads",
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "查看文件", style: .default) { _ in
+                    if let path = task.localPath {
+                        let url = URL(fileURLWithPath: path)
+                        let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                        self?.present(activityVC, animated: true)
+                    }
+                })
+                alert.addAction(UIAlertAction(title: "好的", style: .cancel))
+                self?.present(alert, animated: true)
+            }
+        }
     }
     override var prefersStatusBarHidden: Bool { false }
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }
@@ -1788,11 +1814,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         
         let bar = UIView()
         bar.backgroundColor = .secondarySystemBackground
-        bar.layer.cornerRadius = 12
+        bar.layer.cornerRadius = 14
         bar.layer.shadowColor = UIColor.black.cgColor
         bar.layer.shadowOffset = CGSize(width: 0, height: -2)
-        bar.layer.shadowRadius = 8
-        bar.layer.shadowOpacity = 0.15
+        bar.layer.shadowRadius = 10
+        bar.layer.shadowOpacity = 0.18
         bar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bar)
         confirmBar = bar
@@ -1804,10 +1830,17 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         
         let nameLabel = UILabel()
         nameLabel.text = fileName
-        nameLabel.font = .systemFont(ofSize: 14, weight: .medium)
+        nameLabel.font = .systemFont(ofSize: 14, weight: .semibold)
         nameLabel.lineBreakMode = .byTruncatingMiddle
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         bar.addSubview(nameLabel)
+        
+        let pathLabel = UILabel()
+        pathLabel.text = "保存到：文件 App → 本应用 → Downloads"
+        pathLabel.font = .systemFont(ofSize: 11)
+        pathLabel.textColor = .secondaryLabel
+        pathLabel.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(pathLabel)
         
         let cancelBtn = UIButton(type: .system)
         cancelBtn.setTitle("取消", for: .normal)
@@ -1829,22 +1862,26 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             bar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             bar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
             bar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
-            bar.heightAnchor.constraint(equalToConstant: 50),
+            bar.heightAnchor.constraint(equalToConstant: 64),
             
-            icon.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 12),
+            icon.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 14),
             icon.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 24),
-            icon.heightAnchor.constraint(equalToConstant: 24),
+            icon.widthAnchor.constraint(equalToConstant: 28),
+            icon.heightAnchor.constraint(equalToConstant: 28),
             
-            nameLabel.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
-            nameLabel.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            nameLabel.topAnchor.constraint(equalTo: bar.topAnchor, constant: 8),
+            nameLabel.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
             nameLabel.trailingAnchor.constraint(equalTo: cancelBtn.leadingAnchor, constant: -8),
+            
+            pathLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
+            pathLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            pathLabel.trailingAnchor.constraint(equalTo: nameLabel.trailingAnchor),
             
             cancelBtn.trailingAnchor.constraint(equalTo: downloadBtn.leadingAnchor, constant: -12),
             cancelBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
             cancelBtn.widthAnchor.constraint(equalToConstant: 44),
             
-            downloadBtn.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -12),
+            downloadBtn.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -14),
             downloadBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
             downloadBtn.widthAnchor.constraint(equalToConstant: 44),
         ])
@@ -2020,30 +2057,116 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         pendingLoginPlatform = nil
     }
 
+    // 边缘手势配置
+    private let edgeWidth: CGFloat = 24.0 // 边缘触发区域
+    private var edgeGestureDirection: UISwipeGestureRecognizer.Direction?
+    private var edgeSnapshotView: UIView?
+    
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
         guard gesture.view === currentWebView else { return }
         let location = gesture.location(in: view)
         let translation = gesture.translation(in: view)
+        let velocity = gesture.velocity(in: view)
+        
         switch gesture.state {
         case .began:
             gestureStartPoint = location
             gestureStartDate = Date()
-        case .ended:
-            let elapsed = Date().timeIntervalSince(gestureStartDate)
-            let horizontalDistance = translation.x
-            let verticalDistance = abs(translation.y)
-            guard elapsed <= gestureMaxDuration,
-                  abs(horizontalDistance) > gestureThreshold,
-                  abs(horizontalDistance) > verticalDistance * 1.5 else {
+            // 判断是否从边缘开始
+            let isLeftEdge = location.x <= edgeWidth
+            let isRightEdge = location.x >= view.bounds.width - edgeWidth
+            guard isLeftEdge || isRightEdge else {
+                edgeGestureDirection = nil
                 return
             }
-            if horizontalDistance > 0 {
-                if currentWebView.canGoBack { currentWebView.goBack() }
+            // 确定方向：左边缘右滑=返回，右边缘左滑=前进
+            if isLeftEdge {
+                edgeGestureDirection = .right
             } else {
-                if currentWebView.canGoForward { currentWebView.goForward() }
+                edgeGestureDirection = .left
             }
+            // 创建页面快照用于跟随动画
+            setupEdgeSnapshot()
+        case .changed:
+            guard let direction = edgeGestureDirection else { return }
+            // 页面跟随手指移动（苹果边缘手势效果）
+            var offset: CGFloat = 0
+            if direction == .right {
+                offset = max(0, translation.x)
+                // 右滑返回：页面向右移动，露出左侧
+                currentWebView.transform = CGAffineTransform(translationX: offset * 0.3, y: 0)
+                currentWebView.alpha = 1.0 - (offset / view.bounds.width) * 0.2
+            } else {
+                offset = max(0, -translation.x)
+                // 左滑前进：页面向左移动
+                currentWebView.transform = CGAffineTransform(translationX: -offset * 0.3, y: 0)
+                currentWebView.alpha = 1.0 - (offset / view.bounds.width) * 0.2
+            }
+        case .ended:
+            guard let direction = edgeGestureDirection else { return }
+            let elapsed = Date().timeIntervalSince(gestureStartDate)
+            let horizontalDistance = direction == .right ? translation.x : -translation.x
+            let verticalDistance = abs(translation.y)
+            let horizontalVelocity = direction == .right ? velocity.x : -velocity.x
+            
+            // 判断是否触发导航：距离超过阈值 或 速度足够快
+            let shouldTrigger = (horizontalDistance > gestureThreshold * 0.6 || horizontalVelocity > 500)
+                               && horizontalDistance > verticalDistance * 1.5
+                               && elapsed < 1.0
+            
+            if shouldTrigger {
+                if direction == .right && currentWebView.canGoBack {
+                    // 完成返回动画
+                    UIView.animate(withDuration: 0.25, animations: {
+                        self.currentWebView.transform = CGAffineTransform(translationX: self.view.bounds.width * 0.3, y: 0)
+                        self.currentWebView.alpha = 0.8
+                    }) { _ in
+                        self.currentWebView.goBack()
+                        UIView.animate(withDuration: 0.2) {
+                            self.currentWebView.transform = .identity
+                            self.currentWebView.alpha = 1.0
+                        }
+                    }
+                } else if direction == .left && currentWebView.canGoForward {
+                    UIView.animate(withDuration: 0.25, animations: {
+                        self.currentWebView.transform = CGAffineTransform(translationX: -self.view.bounds.width * 0.3, y: 0)
+                        self.currentWebView.alpha = 0.8
+                    }) { _ in
+                        self.currentWebView.goForward()
+                        UIView.animate(withDuration: 0.2) {
+                            self.currentWebView.transform = .identity
+                            self.currentWebView.alpha = 1.0
+                        }
+                    }
+                } else {
+                    // 无法导航，回弹
+                    resetEdgeTransform()
+                }
+            } else {
+                // 未触发，回弹
+                resetEdgeTransform()
+            }
+            edgeGestureDirection = nil
+        case .cancelled, .failed:
+            resetEdgeTransform()
+            edgeGestureDirection = nil
         default:
             break
+        }
+    }
+    private func setupEdgeSnapshot() {
+        // 苹果边缘手势效果：页面轻微缩放+阴影
+        currentWebView.layer.shadowColor = UIColor.black.cgColor
+        currentWebView.layer.shadowOffset = CGSize(width: -4, height: 0)
+        currentWebView.layer.shadowRadius = 12
+        currentWebView.layer.shadowOpacity = 0.15
+    }
+    private func resetEdgeTransform() {
+        UIView.animate(withDuration: 0.2, delay: 0, options: .curveEaseOut, animations: {
+            self.currentWebView.transform = .identity
+            self.currentWebView.alpha = 1.0
+        }) { _ in
+            self.currentWebView.layer.shadowOpacity = 0
         }
     }
     // MARK: - 翻译功能
