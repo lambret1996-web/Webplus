@@ -445,15 +445,16 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     // MARK: - DNS预解析
     private func prefetchDNS(for urlString: String) {
-        guard let url = URL(string: urlString), let host = url.host else { return }
-        // 使用CFHost异步解析DNS，不阻塞主线程
-        let hostRef = CFHostCreateWithName(kCFAllocatorDefault, host as CFString).takeRetainedValue()
-        var context = CFHostClientContext(version: 0, info: nil, retain: nil, release: nil, copyDescription: nil)
-        CFHostSetClient(hostRef, { (_, _, _, _) in
-            // DNS解析完成，系统会缓存结果
-        }, &context)
-        CFHostScheduleWithRunLoop(hostRef, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode)
-        CFHostStartInfoResolution(hostRef, .addresses, nil)
+        guard let url = URL(string: urlString) else { return }
+        // 发送一个超时极短的请求触发系统DNS解析并缓存，立即取消不下载数据
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 3)
+        request.httpMethod = "HEAD"
+        let task = URLSession.shared.dataTask(with: request) { _, _, _ in }
+        task.resume()
+        // 200ms后取消，只需DNS解析完成
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) {
+            task.cancel()
+        }
     }
     // MARK: - Pre-Connect TCP预连接
     private func preConnect(for urlString: String) {
