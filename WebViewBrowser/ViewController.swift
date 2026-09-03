@@ -1,5 +1,17 @@
 import UIKit
 import WebKit
+import AVFoundation
+import Photos
+import CoreLocation
+import CoreBluetooth
+import Speech
+import UserNotifications
+import LocalAuthentication
+import MediaPlayer
+import CoreMotion
+import Contacts
+import EventKit
+import AppTrackingTransparency
 class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UIScrollViewDelegate, UITextFieldDelegate {
     // MARK: - 配置项
     private var windowTitles: [String] = ["GitHub", "CF", "Google", "YouTube"]
@@ -1131,6 +1143,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         alert.addAction(UIAlertAction(title: uaTitle, style: .default) { _ in
             self.switchUA()
         })
+        // 权限设置
+        alert.addAction(UIAlertAction(title: "🔐 权限设置（一键开启全部）", style: .default) { _ in
+            self.showPermissionManager()
+        })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         if let popover = alert.popoverPresentationController {
             popover.sourceView = translateButton
@@ -1245,6 +1261,136 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             self.showCustomAdManager()
         })
         present(alert, animated: true)
+    }
+    // MARK: - 权限管理
+    private func showPermissionManager() {
+        let alert = UIAlertController(title: "权限管理", message: "一键开启所有浏览器所需权限", preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "🚀 一键开启全部权限", style: .default) { _ in
+            self.requestAllPermissions()
+        })
+        alert.addAction(UIAlertAction(title: "📷 相机/麦克风/相册", style: .default) { _ in
+            self.requestMediaPermissions()
+        })
+        alert.addAction(UIAlertAction(title: "📍 定位权限", style: .default) { _ in
+            self.requestLocationPermission()
+        })
+        alert.addAction(UIAlertAction(title: "🔔 通知权限", style: .default) { _ in
+            self.requestNotificationPermission()
+        })
+        alert.addAction(UIAlertAction(title: "🎙 语音识别", style: .default) { _ in
+            self.requestSpeechPermission()
+        })
+        alert.addAction(UIAlertAction(title: "📡 蓝牙/本地网络", style: .default) { _ in
+            self.requestBluetoothPermission()
+        })
+        alert.addAction(UIAlertAction(title: "👤 追踪/通讯录/日历", style: .default) { _ in
+            self.requestOtherPermissions()
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = translateButton
+            popover.sourceRect = translateButton.bounds
+        }
+        present(alert, animated: true)
+    }
+    private func requestAllPermissions() {
+        let group = DispatchGroup()
+        var results: [String] = []
+        // 相机
+        group.enter()
+        AVCaptureDevice.requestAccess(for: .video) { granted in
+            results.append("相机: \(granted ? "✓" : "✗")")
+            group.leave()
+        }
+        // 麦克风
+        group.enter()
+        AVCaptureDevice.requestAccess(for: .audio) { granted in
+            results.append("麦克风: \(granted ? "✓" : "✗")")
+            group.leave()
+        }
+        // 相册
+        group.enter()
+        PHPhotoLibrary.requestAuthorization { status in
+            results.append("相册: \(status == .authorized ? "✓" : "✗")")
+            group.leave()
+        }
+        // 通知
+        group.enter()
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
+            results.append("通知: \(granted ? "✓" : "✗")")
+            group.leave()
+        }
+        // 语音识别
+        group.enter()
+        SFSpeechRecognizer.requestAuthorization { status in
+            results.append("语音识别: \(status == .authorized ? "✓" : "✗")")
+            group.leave()
+        }
+        // 追踪
+        group.enter()
+        ATTrackingManager.requestTrackingAuthorization { status in
+            results.append("追踪: \(status == .authorized ? "✓" : "✗")")
+            group.leave()
+        }
+        // 通讯录
+        group.enter()
+        CNContactStore().requestAccess(for: .contacts) { granted, _ in
+            results.append("通讯录: \(granted ? "✓" : "✗")")
+            group.leave()
+        }
+        // 日历
+        group.enter()
+        EKEventStore().requestAccess(to: .event) { granted, _ in
+            results.append("日历: \(granted ? "✓" : "✗")")
+            group.leave()
+        }
+        // 提醒事项
+        group.enter()
+        EKEventStore().requestAccess(to: .reminder) { granted, _ in
+            results.append("提醒: \(granted ? "✓" : "✗")")
+            group.leave()
+        }
+        group.notify(queue: .main) {
+            let summary = results.joined(separator: "\n")
+            let resultAlert = UIAlertController(title: "权限申请结果", message: summary, preferredStyle: .alert)
+            resultAlert.addAction(UIAlertAction(title: "确定", style: .default))
+            self.present(resultAlert, animated: true)
+        }
+        // 定位（异步，不阻塞group）
+        requestLocationPermission()
+        // 蓝牙（异步）
+        requestBluetoothPermission()
+    }
+    private func requestMediaPermissions() {
+        AVCaptureDevice.requestAccess(for: .video) { _ in }
+        AVCaptureDevice.requestAccess(for: .audio) { _ in }
+        PHPhotoLibrary.requestAuthorization { _ in }
+        showToast("已申请相机/麦克风/相册权限")
+    }
+    private func requestLocationPermission() {
+        let locationManager = CLLocationManager()
+        locationManager.requestWhenInUseAuthorization()
+        showToast("已申请定位权限")
+    }
+    private func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
+        showToast("已申请通知权限")
+    }
+    private func requestSpeechPermission() {
+        SFSpeechRecognizer.requestAuthorization { _ in }
+        showToast("已申请语音识别权限")
+    }
+    private func requestBluetoothPermission() {
+        // 蓝牙权限通过CBCentralManager初始化时自动触发
+        _ = CBCentralManager()
+        showToast("已申请蓝牙/本地网络权限")
+    }
+    private func requestOtherPermissions() {
+        ATTrackingManager.requestTrackingAuthorization { _ in }
+        CNContactStore().requestAccess(for: .contacts) { _, _ in }
+        EKEventStore().requestAccess(to: .event) { _, _ in }
+        EKEventStore().requestAccess(to: .reminder) { _, _ in }
+        showToast("已申请追踪/通讯录/日历权限")
     }
     // MARK: - UA切换
     private func switchUA() {
