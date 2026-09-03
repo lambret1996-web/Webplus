@@ -39,6 +39,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var confirmBar: UIView?
     private var pendingDownloadURL: String?
     private var pendingDownloadName: String?
+    // 第三方登录
+    private var loginConfirmBar: UIView?
+    private var pendingLoginURL: URL?
+    private var pendingLoginPlatform: ThirdPartyPlatform?
+    private var loginConfirmKey = "loginConfirmEnabled"
+    private var isLoginRedirecting = false
     private var urlTextField: UITextField!
     private var webViews: [WKWebView] = []
     private var webViewContainer: UIView!
@@ -1197,6 +1203,14 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         alert.addAction(UIAlertAction(title: "🔐 权限设置（一键开启全部）", style: .default) { _ in
             self.showPermissionManager()
         })
+        // 第三方登录跳转确认开关
+        let loginConfirm = UserDefaults.standard.object(forKey: self.loginConfirmKey) as? Bool ?? true
+        let loginTitle = loginConfirm ? "🔗 登录跳转确认：已开启（点击关闭）" : "🔗 登录跳转确认：已关闭（点击开启）"
+        alert.addAction(UIAlertAction(title: loginTitle, style: .default) { _ in
+            let current = UserDefaults.standard.object(forKey: self.loginConfirmKey) as? Bool ?? true
+            UserDefaults.standard.set(!current, forKey: self.loginConfirmKey)
+            self.showToast(!current ? "登录跳转确认已开启" : "已开启静默跳转")
+        })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         if let popover = alert.popoverPresentationController {
             popover.sourceView = translateButton
@@ -2199,6 +2213,24 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         if let index = webViews.firstIndex(of: webView) { endCustomRefresh(for: index) }
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.allow)
+            return
+        }
+        // 拦截第三方登录/唤起URL
+        let (isThirdParty, platform) = ThirdPartyLoginManager.shared.isThirdPartyURL(url)
+        if isThirdParty, let platform = platform {
+            decisionHandler(.cancel)
+            handleThirdPartyLogin(url: url, platform: platform)
+            return
+        }
+        // 拦截tel:、sms:、mailto:等系统URL
+        let scheme = url.scheme?.lowercased() ?? ""
+        if ["tel", "sms", "mailto"].contains(scheme) {
+            decisionHandler(.cancel)
+            UIApplication.shared.open(url)
+            return
+        }
         decisionHandler(.allow)
     }
     // MARK: - WKUIDelegate

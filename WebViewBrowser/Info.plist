@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
-	<string>12.2</string>
+	<string>12.3</string>
 	<key>CFBundleVersion</key>
-	<string>12.2</string>
+	<string>12.3</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
@@ -60,6 +60,51 @@
 	<string>UIStatusBarStyleDarkContent</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>weixin</string>
+		<string>wechat</string>
+		<string>weixinULAPI</string>
+		<string>mqq</string>
+		<string>mqqapi</string>
+		<string>mqqopensdkapi</string>
+		<string>alipays</string>
+		<string>alipay</string>
+		<string>weibosdk</string>
+		<string>weibo</string>
+		<string>sinaweibo</string>
+		<string>dingtalk</string>
+		<string>dingtalk-open</string>
+		<string>taobao</string>
+		<string>tmall</string>
+		<string>jdopen</string>
+		<string>openapp.jdmobile</string>
+		<string>baiduboxapp</string>
+		<string>douyin</string>
+		<string>snssdk1128</string>
+		<string>xhsdiscover</string>
+		<string>xhs</string>
+		<string>bilibili</string>
+		<string>bilibiliwhite</string>
+		<string>zhihu</string>
+		<string>neteasemusic</string>
+		<string>orpheus</string>
+		<string>qqmusic</string>
+		<string>qqmusic-api</string>
+		<string>ku gou</string>
+		<string>kugou</string>
+		<string>kuwo</string>
+		<string>ximalaya</string>
+		<string>baidumap</string>
+		<string>baidumap://</string>
+		<string>iosamap</string>
+		<string>amapuri</string>
+		<string>amap</string>
+		<string>qqmap</string>
+		<string>tel</string>
+		<string>sms</string>
+		<string>mailto</string>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
