@@ -60,11 +60,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         separator.translatesAutoresizingMaskIntoConstraints = false
         tabBar.addSubview(separator)
         NSLayoutConstraint.activate([
-            tabBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            tabBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             tabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tabBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -tabBarHeight),
-            separator.topAnchor.constraint(equalTo: tabBar.topAnchor),
+            tabBar.heightAnchor.constraint(equalToConstant: tabBarHeight),
+            separator.bottomAnchor.constraint(equalTo: tabBar.bottomAnchor),
             separator.leadingAnchor.constraint(equalTo: tabBar.leadingAnchor),
             separator.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor),
             separator.heightAnchor.constraint(equalToConstant: 0.5)
@@ -152,7 +152,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         webViewContainer.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webViewContainer)
         NSLayoutConstraint.activate([
-            webViewContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            webViewContainer.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
             webViewContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webViewContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webViewContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor)
@@ -170,7 +170,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             webView.allowsBackForwardNavigationGestures = false
             webView.translatesAutoresizingMaskIntoConstraints = false
             webView.scrollView.bounces = true
-            webView.scrollView.contentInset.bottom = tabBarHeight + 8
             webView.isHidden = (i != 0)
             webViewContainer.addSubview(webView)
             NSLayoutConstraint.activate([
@@ -200,7 +199,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         progressView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(progressView)
         NSLayoutConstraint.activate([
-            progressView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            progressView.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
             progressView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             progressView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             progressView.heightAnchor.constraint(equalToConstant: 2)
@@ -523,7 +522,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         view.addSubview(toast)
         NSLayoutConstraint.activate([
             toast.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            toast.bottomAnchor.constraint(equalTo: tabBar.topAnchor, constant: -16),
+            toast.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
             toast.widthAnchor.constraint(lessThanOrEqualToConstant: 280),
             toast.heightAnchor.constraint(equalToConstant: 36)
         ])
