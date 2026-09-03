@@ -400,37 +400,33 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             }
         }
     }
-    /// 单段翻译：有道翻译（带浏览器请求头），URLSession.shared，每请求10秒超时
+    /// 单段翻译：Google gtx 主源 → MyMemory 备用，URLSession.shared，每请求10秒超时
     private func translateSingle(_ text: String, completion: @escaping (String?) -> Void) {
         let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
+        let userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"
 
-        // 有道翻译主端点（修复URL格式，去掉多余的&）
-        guard let url = URL(string: "https://fanyi.youdao.com/translate?doctype=json&type=AUTO&i=\(encoded)") else {
+        // 源1：Google 翻译 gtx 端点（无需API key，翻译质量最好）
+        guard let url1 = URL(string: "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&q=\(encoded)") else {
             completion(nil)
             return
         }
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 10
-        req.httpMethod = "GET"
-        // 模拟 iPhone Safari 浏览器请求，避免被有道服务器拒绝
-        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
-        req.setValue("https://fanyi.youdao.com/", forHTTPHeaderField: "Referer")
-        req.setValue("application/json, text/javascript, */*; q=0.01", forHTTPHeaderField: "Accept")
-        req.setValue("zh-CN,zh;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
+        var req1 = URLRequest(url: url1)
+        req1.timeoutInterval = 10
+        req1.httpMethod = "GET"
+        req1.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        req1.setValue("*/*", forHTTPHeaderField: "Accept")
+        req1.setValue("zh-CN,zh;q=0.9", forHTTPHeaderField: "Accept-Language")
 
-        URLSession.shared.dataTask(with: req) { data, response, error in
-            // 检查 HTTP 状态码
-            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
-                print("有道翻译 HTTP 状态码: \(httpResponse.statusCode)")
-            }
+        URLSession.shared.dataTask(with: req1) { data, response, error in
+            // Google gtx 返回嵌套数组格式：[[["译文","原文",...]],...]
             if let data = data,
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let code = json["errorCode"] as? Int, code == 0,
-               let resultArr = json["translateResult"] as? [[[String: Any]]] {
+               let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+               let segments = json.first as? [[Any]] {
                 var translated = ""
-                for seg in resultArr[0] {
-                    if let tgt = seg["tgt"] as? String {
-                        translated += tgt
+                for seg in segments {
+                    if seg.count > 0, let text = seg[0] as? String {
+                        translated += text
                     }
                 }
                 if !translated.isEmpty {
@@ -438,11 +434,36 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
                     return
                 }
             }
-            // 打印失败原因用于调试
-            if let data = data, let raw = String(data: data, encoding: .utf8) {
-                print("有道翻译返回: \(raw.prefix(200))")
+            print("Google翻译失败，降级到MyMemory")
+
+            // 源2：MyMemory 备用
+            guard let url2 = URL(string: "https://api.mymemory.translated.net/get?q=\(encoded)&langpair=autodetect|zh-CN") else {
+                completion(nil)
+                return
             }
-            completion(nil)
+            var req2 = URLRequest(url: url2)
+            req2.timeoutInterval = 10
+            req2.httpMethod = "GET"
+            req2.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+            req2.setValue("application/json", forHTTPHeaderField: "Accept")
+            req2.setValue("https://mymemory.translated.net/", forHTTPHeaderField: "Referer")
+
+            URLSession.shared.dataTask(with: req2) { data, response, error in
+                if let data = data,
+                   let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let status = json["responseStatus"] as? Int, status == 200,
+                   let respData = json["responseData"] as? [String: Any],
+                   let translated = respData["translatedText"] as? String,
+                   !translated.isEmpty {
+                    completion(translated)
+                    return
+                }
+                if let data = data, let raw = String(data: data, encoding: .utf8) {
+                    print("MyMemory返回: \(raw.prefix(200))")
+                }
+                completion(nil)
+            }.resume()
         }.resume()
     }
     /// 一次性应用翻译结果到页面（TreeWalker只遍历一次，在文本修改前完成所有匹配，避免分批应用时的顺序错乱）
