@@ -38,8 +38,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        setupWebViewContainer()
         setupTabBar()
+        setupWebViewContainer()
         setupWebViews()
         setupProgressView()
         setupRefreshControls()
