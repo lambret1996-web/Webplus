@@ -64,6 +64,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // MARK: - 网页搜索
     private var currentFindIndex: Int = 0
     private var totalFindCount: Int = 0
+    private var findBarView: UIView?
+    private var findTextField: UITextField?
+    private var findCountLabel: UILabel?
+    private var findKeyword: String = ""
+    private var findBottomConstraint: NSLayoutConstraint?
     private let uaPresets = [
         "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15",
@@ -208,6 +213,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     // MARK: - 网址输入框
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        // 搜索框按回车不关闭键盘，保持搜索状态
+        if textField === findTextField {
+            return true
+        }
         textField.resignFirstResponder()
         guard let input = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines),
               !input.isEmpty else { return true }
@@ -1423,30 +1432,170 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         let centerX = view.bounds.width / 2
         guard location.y > bottomThreshold,
               abs(location.x - centerX) < centerRange else { return }
-        showFindInPage()
+        showFindBar()
     }
-    private func showFindInPage() {
-        let alert = UIAlertController(title: "网页内搜索", message: totalFindCount > 0 ? "当前 \(currentFindIndex+1)/\(totalFindCount)" : "输入关键词，全部匹配高亮", preferredStyle: .alert)
-        alert.addTextField { tf in
-            tf.placeholder = "输入搜索关键词"
-            tf.returnKeyType = .search
+    // MARK: - 自定义搜索栏（跟随键盘）
+    private func showFindBar() {
+        if findBarView != nil {
+            findTextField?.becomeFirstResponder()
+            return
         }
-        alert.addAction(UIAlertAction(title: "搜索", style: .default) { _ in
-            guard let keyword = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !keyword.isEmpty else { return }
-            self.findInPage(keyword: keyword)
-        })
-        alert.addAction(UIAlertAction(title: "↑ 上一个", style: .default) { _ in
-            self.findPrev()
-        })
-        alert.addAction(UIAlertAction(title: "↓ 下一个", style: .default) { _ in
-            self.findNext()
-        })
-        alert.addAction(UIAlertAction(title: "清除高亮", style: .destructive) { _ in
+        // 监听键盘
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow(_:)), name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
+        // 创建搜索栏
+        let bar = UIView()
+        bar.backgroundColor = .secondarySystemBackground
+        bar.layer.cornerRadius = 12
+        bar.layer.shadowColor = UIColor.black.cgColor
+        bar.layer.shadowOffset = CGSize(width: 0, height: -2)
+        bar.layer.shadowRadius = 8
+        bar.layer.shadowOpacity = 0.15
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bar)
+        findBarView = bar
+        // 搜索输入框
+        let tf = UITextField()
+        tf.placeholder = "搜索网页"
+        tf.font = .systemFont(ofSize: 16)
+        tf.borderStyle = .roundedRect
+        tf.backgroundColor = .tertiarySystemBackground
+        tf.autocapitalizationType = .none
+        tf.autocorrectionType = .no
+        tf.returnKeyType = .search
+        tf.clearButtonMode = .whileEditing
+        tf.delegate = self
+        tf.translatesAutoresizingMaskIntoConstraints = false
+        tf.addTarget(self, action: #selector(findTextChanged(_:)), for: .editingChanged)
+        bar.addSubview(tf)
+        findTextField = tf
+        // 计数标签
+        let countLabel = UILabel()
+        countLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        countLabel.textColor = .secondaryLabel
+        countLabel.textAlignment = .center
+        countLabel.text = "0/0"
+        countLabel.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(countLabel)
+        findCountLabel = countLabel
+        // 上一个按钮（↑箭头）
+        let prevBtn = UIButton(type: .system)
+        prevBtn.setImage(UIImage(systemName: "chevron.up"), for: .normal)
+        prevBtn.tintColor = .systemBlue
+        prevBtn.translatesAutoresizingMaskIntoConstraints = false
+        prevBtn.addTarget(self, action: #selector(findPrevTapped), for: .touchUpInside)
+        bar.addSubview(prevBtn)
+        // 下一个按钮（↓箭头）
+        let nextBtn = UIButton(type: .system)
+        nextBtn.setImage(UIImage(systemName: "chevron.down"), for: .normal)
+        nextBtn.tintColor = .systemBlue
+        nextBtn.translatesAutoresizingMaskIntoConstraints = false
+        nextBtn.addTarget(self, action: #selector(findNextTapped), for: .touchUpInside)
+        bar.addSubview(nextBtn)
+        // 完成按钮
+        let doneBtn = UIButton(type: .system)
+        doneBtn.setTitle("完成", for: .normal)
+        doneBtn.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+        doneBtn.tintColor = .systemBlue
+        doneBtn.translatesAutoresizingMaskIntoConstraints = false
+        doneBtn.addTarget(self, action: #selector(findDoneTapped), for: .touchUpInside)
+        bar.addSubview(doneBtn)
+        // 布局
+        NSLayoutConstraint.activate([
+            bar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            bar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
+            bar.heightAnchor.constraint(equalToConstant: 44),
+            tf.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 8),
+            tf.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            tf.widthAnchor.constraint(equalToConstant: 140),
+            tf.heightAnchor.constraint(equalToConstant: 32),
+            countLabel.leadingAnchor.constraint(equalTo: tf.trailingAnchor, constant: 8),
+            countLabel.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            countLabel.widthAnchor.constraint(equalToConstant: 45),
+            prevBtn.leadingAnchor.constraint(equalTo: countLabel.trailingAnchor, constant: 4),
+            prevBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            prevBtn.widthAnchor.constraint(equalToConstant: 32),
+            prevBtn.heightAnchor.constraint(equalToConstant: 32),
+            nextBtn.leadingAnchor.constraint(equalTo: prevBtn.trailingAnchor, constant: 2),
+            nextBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            nextBtn.widthAnchor.constraint(equalToConstant: 32),
+            nextBtn.heightAnchor.constraint(equalToConstant: 32),
+            doneBtn.leadingAnchor.constraint(equalTo: nextBtn.trailingAnchor, constant: 4),
+            doneBtn.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -8),
+            doneBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            doneBtn.widthAnchor.constraint(equalToConstant: 50)
+        ])
+        // 初始位置在底部
+        findBottomConstraint = bar.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 100)
+        findBottomConstraint?.isActive = true
+        view.layoutIfNeeded()
+        // 弹出动画
+        DispatchQueue.main.async {
+            self.findBottomConstraint?.constant = -8
+            UIView.animate(withDuration: 0.25) {
+                self.view.layoutIfNeeded()
+            }
+        }
+        // 自动聚焦
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            tf.becomeFirstResponder()
+        }
+    }
+    @objc private func keyboardWillShow(_ notification: Notification) {
+        guard let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+        let keyboardHeight = keyboardFrame.height
+        findBottomConstraint?.constant = -keyboardHeight - 8
+        UIView.animate(withDuration: 0.25) {
+            self.view.layoutIfNeeded()
+        }
+    }
+    @objc private func keyboardWillHide(_ notification: Notification) {
+        findBottomConstraint?.constant = -8
+        UIView.animate(withDuration: 0.25) {
+            self.view.layoutIfNeeded()
+        }
+    }
+    @objc private func findTextChanged(_ textField: UITextField) {
+        guard let keyword = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        findKeyword = keyword
+        if keyword.isEmpty {
+            clearFindHighlight()
+            findCountLabel?.text = "0/0"
+            return
+        }
+        findInPage(keyword: keyword)
+    }
+    @objc private func findPrevTapped() {
+        findPrev()
+    }
+    @objc private func findNextTapped() {
+        findNext()
+    }
+    @objc private func findDoneTapped() {
+        hideFindBar()
+    }
+    private func hideFindBar() {
+        findTextField?.resignFirstResponder()
+        NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillShowNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillHideNotification, object: nil)
+        findBottomConstraint?.constant = 100
+        UIView.animate(withDuration: 0.25, animations: {
+            self.view.layoutIfNeeded()
+        }) { _ in
+            self.findBarView?.removeFromSuperview()
+            self.findBarView = nil
+            self.findTextField = nil
+            self.findCountLabel = nil
             self.clearFindHighlight()
-        })
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        present(alert, animated: true)
+        }
+    }
+    // 禁止点击搜索栏外部关闭（用户没点完成前不可关闭）
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if findBarView != nil {
+            // 搜索栏显示时，不关闭
+            return
+        }
+        super.touchesBegan(touches, with: event)
     }
     private func findInPage(keyword: String) {
         currentFindIndex = 0
@@ -1496,28 +1645,24 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             if (first) first.scrollIntoView({behavior: 'smooth', block: 'center'});
             return count;
         })();
-        """
+        """.replacingOccurrences(of: "\(escaped)", with: escaped)
         currentWebView.evaluateJavaScript(js) { [weak self] result, error in
             if let count = result as? Int {
                 self?.totalFindCount = count
                 self?.currentFindIndex = 0
-                if count > 0 {
-                    self?.showToast("找到 \(count) 处，当前第1处")
-                } else {
-                    self?.showToast("未找到匹配内容")
+                DispatchQueue.main.async {
+                    self?.findCountLabel?.text = count > 0 ? "1/\(count)" : "0/0"
                 }
-            } else {
-                self?.showToast("搜索失败")
             }
         }
     }
     private func findNext() {
-        guard totalFindCount > 0 else { showToast("请先搜索"); return }
+        guard totalFindCount > 0 else { return }
         currentFindIndex = (currentFindIndex + 1) % totalFindCount
         scrollToFindIndex()
     }
     private func findPrev() {
-        guard totalFindCount > 0 else { showToast("请先搜索"); return }
+        guard totalFindCount > 0 else { return }
         currentFindIndex = (currentFindIndex - 1 + totalFindCount) % totalFindCount
         scrollToFindIndex()
     }
@@ -1535,7 +1680,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         })();
         """
         currentWebView.evaluateJavaScript(js) { [weak self] _, _ in
-            self?.showToast("当前第 \((self?.currentFindIndex ?? 0)+1)/\(self?.totalFindCount ?? 0) 处")
+            DispatchQueue.main.async {
+                self?.findCountLabel?.text = "\((self?.currentFindIndex ?? 0)+1)/\(self?.totalFindCount ?? 0)"
+            }
         }
     }
     private func clearFindHighlight() {
@@ -1550,7 +1697,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         currentWebView.evaluateJavaScript(js, completionHandler: nil)
         currentFindIndex = 0
         totalFindCount = 0
-        showToast("已清除高亮")
     }
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
         guard gesture.view === currentWebView else { return }
