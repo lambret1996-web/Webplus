@@ -119,6 +119,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         button.tag = tag
         button.layer.cornerRadius = 16
         button.layer.masksToBounds = true
+        button.layer.borderWidth = 1
+        button.layer.borderColor = UIColor.separator.cgColor
+        button.backgroundColor = .secondarySystemFill
+        button.setTitleColor(.label, for: .normal)
         button.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
         return button
     }
@@ -134,7 +138,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
                 button.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
             } else {
                 button.backgroundColor = .secondarySystemFill
-                button.setTitleColor(.secondaryLabel, for: .normal)
+                button.setTitleColor(.label, for: .normal)
                 button.titleLabel?.font = .systemFont(ofSize: 14, weight: .regular)
             }
         }
@@ -146,7 +150,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     }
     private func updateTabTitle(index: Int, title: String) {
         guard index < tabButtons.count else { return }
-        let displayTitle = title.count > 6 ? String(title.prefix(6)) + "…" : title
+        // 空标题时保持默认标题，避免标签文字被清空
+        let safeTitle = title.isEmpty ? windowTitles[index] : title
+        let displayTitle = safeTitle.count > 6 ? String(safeTitle.prefix(6)) + "…" : safeTitle
         tabButtons[index].setTitle(displayTitle, for: .normal)
     }
     // MARK: - WebView 容器
