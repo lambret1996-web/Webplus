@@ -17,7 +17,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     private let maxTranslateSegments = 5000
     // MARK: - UI 组件
     private var tabBar: UIView!
-    private var tabBarBlur: UIVisualEffectView!
     private var tabButtons: [UIButton] = []
     private var translateButton: UIButton!
     private var webViews: [WKWebView] = []
@@ -53,15 +52,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     // MARK: - 底部工具栏（毛玻璃 + 圆形翻译按钮居中）
     private func setupTabBar() {
         tabBar = UIView()
-        tabBar.backgroundColor = .clear
+        tabBar.backgroundColor = .secondarySystemBackground
         tabBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(tabBar)
-        let blur = UIBlurEffect(style: .systemMaterial)
-        tabBarBlur = UIVisualEffectView(effect: blur)
-        tabBarBlur.translatesAutoresizingMaskIntoConstraints = false
-        tabBar.addSubview(tabBarBlur)
         let separator = UIView()
-        separator.backgroundColor = .separator.withAlphaComponent(0.3)
+        separator.backgroundColor = .separator.withAlphaComponent(0.5)
         separator.translatesAutoresizingMaskIntoConstraints = false
         tabBar.addSubview(separator)
         NSLayoutConstraint.activate([
@@ -69,10 +64,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             tabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tabBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -tabBarHeight),
-            tabBarBlur.topAnchor.constraint(equalTo: tabBar.topAnchor),
-            tabBarBlur.leadingAnchor.constraint(equalTo: tabBar.leadingAnchor),
-            tabBarBlur.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor),
-            tabBarBlur.bottomAnchor.constraint(equalTo: tabBar.bottomAnchor),
             separator.topAnchor.constraint(equalTo: tabBar.topAnchor),
             separator.leadingAnchor.constraint(equalTo: tabBar.leadingAnchor),
             separator.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor),
