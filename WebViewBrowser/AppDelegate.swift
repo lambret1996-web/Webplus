@@ -69,14 +69,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         let diskCapacity = 256 * 1024 * 1024
         let cache = SmartURLCache(memoryCapacity: memoryCapacity, diskCapacity: diskCapacity, diskPath: "SmartBrowserCache")
         URLCache.shared = cache
-        // 网络优化：HTTP/3(QUIC)系统自动协商，优化连接参数
-        let config = URLSessionConfiguration.default
-        config.httpMaximumConnectionsPerHost = 8
-        config.httpShouldUsePipelining = true
-        config.waitsForConnectivity = true
-        config.networkServiceType = .responsiveData
-        config.timeoutIntervalForRequest = 15
-        config.timeoutIntervalForResource = 30
         return true
     }
     func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
