@@ -21,6 +21,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var webViewContainer: UIView!
     private var progressView: UIProgressView!
     private var panGestures: [UIPanGestureRecognizer] = []
+    /// Popup 弹窗（用于 Apple 登录等 OAuth 流程）
+    private var popupContainer: UIView?
+    private var popupWebView: WKWebView?
+    private var popupOriginURL: URL?
     /// 自定义下拉刷新
     private var refreshViews: [UIView] = []
     private var refreshIndicators: [UIActivityIndicatorView] = []
@@ -183,6 +187,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             webView.navigationDelegate = self
             webView.uiDelegate = self
             webView.allowsBackForwardNavigationGestures = false
+            // 设置 Safari User-Agent，确保 Apple 登录等第三方登录正常
+            webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
             webView.translatesAutoresizingMaskIntoConstraints = false
             webView.scrollView.bounces = true
             webView.scrollView.delegate = self
@@ -621,6 +627,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     // MARK: - WKNavigationDelegate
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // Popup 登录完成检测
+        if webView === popupWebView {
+            checkPopupLoginComplete(url: webView.url)
+            return
+        }
         if let index = webViews.firstIndex(of: webView) {
             endCustomRefresh(for: index)
             isTranslated[index] = false
@@ -640,9 +651,70 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // MARK: - WKUIDelegate
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if navigationAction.targetFrame == nil {
-            webView.load(navigationAction.request)
+            // Apple 登录等 OAuth 流程需要 popup，创建临时弹窗
+            showPopupWebView(with: configuration, request: navigationAction.request, originURL: webView.url)
+            return nil
         }
         return nil
+    }
+    // MARK: - Popup 弹窗（Apple 登录 / OAuth）
+    private func showPopupWebView(with configuration: WKWebViewConfiguration, request: URLRequest, originURL: URL?) {
+        popupOriginURL = originURL
+        // 全屏容器
+        let container = UIView(frame: view.bounds)
+        container.backgroundColor = .systemBackground
+        container.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(container)
+        popupContainer = container
+        // 顶部工具栏
+        let topBar = UIView(frame: CGRect(x: 0, y: 0, width: container.bounds.width, height: 50))
+        topBar.backgroundColor = .secondarySystemBackground
+        topBar.autoresizingMask = [.flexibleWidth]
+        container.addSubview(topBar)
+        let closeBtn = UIButton(type: .system)
+        closeBtn.setTitle("关闭", for: .normal)
+        closeBtn.titleLabel?.font = .systemFont(ofSize: 16, weight: .medium)
+        closeBtn.frame = CGRect(x: container.bounds.width - 70, y: 10, width: 60, height: 30)
+        closeBtn.autoresizingMask = [.flexibleLeftMargin]
+        closeBtn.addTarget(self, action: #selector(closePopup), for: .touchUpInside)
+        topBar.addSubview(closeBtn)
+        let titleLabel = UILabel(frame: CGRect(x: 60, y: 10, width: container.bounds.width - 140, height: 30))
+        titleLabel.text = "登录验证"
+        titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        titleLabel.textAlignment = .center
+        titleLabel.autoresizingMask = [.flexibleWidth]
+        topBar.addSubview(titleLabel)
+        // WebView
+        let popup = WKWebView(frame: CGRect(x: 0, y: 50, width: container.bounds.width, height: container.bounds.height - 50), configuration: configuration)
+        popup.navigationDelegate = self
+        popup.uiDelegate = self
+        popup.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+        popup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        container.addSubview(popup)
+        popupWebView = popup
+        popup.load(request)
+    }
+    @objc private func closePopup() {
+        popupWebView?.stopLoading()
+        popupWebView?.removeFromSuperview()
+        popupContainer?.removeFromSuperview()
+        popupWebView = nil
+        popupContainer = nil
+        popupOriginURL = nil
+    }
+    /// 检测 popup 登录完成：当 URL 回到原网站域名时自动关闭
+    private func checkPopupLoginComplete(url: URL?) {
+        guard let popup = popupWebView, let origin = popupOriginURL, let currentURL = url else { return }
+        // 跳过 about:blank 和登录域名
+        if currentURL.absoluteString == "about:blank" { return }
+        if currentURL.host == "appleid.apple.com" { return }
+        // 当 URL 主机与原网站相同或包含原网站域名时，认为登录完成
+        if let originHost = origin.host,
+           (currentURL.host == originHost || (currentURL.host?.contains(originHost) ?? false)) {
+            // 登录完成，刷新主 WebView 并关闭弹窗
+            currentWebView.reload()
+            closePopup()
+        }
     }
     deinit {
         for webView in webViews {
