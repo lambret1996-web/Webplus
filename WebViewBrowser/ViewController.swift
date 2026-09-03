@@ -2,7 +2,7 @@ import UIKit
 import WebKit
 class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UIScrollViewDelegate {
     // MARK: - 配置项
-    private let windowTitles: [String] = ["多窗口", "浏览器", "Google", "YouTube"]
+    private let windowTitles: [String] = ["GitHub", "CF", "Google", "YouTube"]
     private let windowURLs: [String] = [
         "https://github.com",
         "https://dash.cloudflare.com/",
@@ -39,6 +39,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        checkAndClearCacheIfNeeded()
         setupTabBar()
         setupWebViewContainer()
         setupWebViews()
@@ -49,6 +50,20 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     override var prefersStatusBarHidden: Bool { false }
     override var preferredStatusBarStyle: UIStatusBarStyle { .darkContent }
+    // MARK: - 缓存管理（24小时自动清空）
+    private func checkAndClearCacheIfNeeded() {
+        let lastClear = UserDefaults.standard.double(forKey: "lastCacheClearTime")
+        let now = Date().timeIntervalSince1970
+        let twentyFourHours: TimeInterval = 24 * 60 * 60
+        // 首次启动或超过24小时则清除缓存
+        if lastClear == 0 || now - lastClear > twentyFourHours {
+            URLCache.shared.removeAllCachedResponses()
+            let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+            WKWebsiteDataStore.default().removeData(ofTypes: dataTypes, modifiedSince: Date.distantPast) {
+                UserDefaults.standard.set(now, forKey: "lastCacheClearTime")
+            }
+        }
+    }
     // MARK: - 顶部工具栏
     private func setupTabBar() {
         tabBar = UIView()
