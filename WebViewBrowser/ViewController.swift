@@ -259,12 +259,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             break
         }
     }
-    // MARK: - 全局翻译功能（默认英文→中文，双翻译源自动降级，无Google依赖）
+    // MARK: - 全局翻译功能（原生端发起请求，绕过页面CSP，双窗口均可用）
     @objc private func translateTapped() {
         if isTranslated[activeIndex] {
             restoreOriginalText()
         } else {
-            injectTranslateScript()
+            startTranslation()
         }
     }
     private func updateTranslateButtonState() {
@@ -276,168 +276,175 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             translateButton.setTitle("译", for: .normal)
         }
     }
-    /// 注入页面翻译脚本：双翻译源（MyMemory首选 → 有道降级），自动检测源语言，目标固定中文
-    private func injectTranslateScript() {
-        let javascript = """
-        (function() {
-            if (window.__browser_translate_active__) { return; }
-            window.__browser_translate_active__ = true;
-
-            // 收集所有可见文本节点
-            function collectTextNodes(root) {
-                var nodes = [];
-                var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-                    acceptNode: function(node) {
-                        if (!node.textContent || !node.textContent.trim()) return NodeFilter.FILTER_REJECT;
-                        var parent = node.parentElement;
-                        if (!parent) return NodeFilter.FILTER_REJECT;
-                        var tag = parent.tagName.toLowerCase();
-                        if (tag === 'script' || tag === 'style' || tag === 'noscript' ||
-                            tag === 'textarea' || tag === 'input' || tag === 'select' ||
-                            tag === 'option' || tag === 'code' || tag === 'pre') {
-                            return NodeFilter.FILTER_REJECT;
-                        }
-                        if (/[\\u4e00-\\u9fa5]/.test(node.textContent)) return NodeFilter.FILTER_REJECT;
-                        if (node.textContent.trim().length < 2) return NodeFilter.FILTER_REJECT;
-                        return NodeFilter.FILTER_ACCEPT;
-                    }
-                });
-                var node;
-                while ((node = walker.nextNode())) {
-                    nodes.push(node);
-                }
-                return nodes;
+    /// JS：收集页面所有待翻译文本节点，保存原文，返回文本数组JSON
+    private let collectTextJS = """
+    (function() {
+        if (window.__browser_translate_active__) return JSON.stringify({error:'already_active'});
+        window.__browser_translate_active__ = true;
+        var texts = [];
+        var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+            acceptNode: function(node) {
+                if (!node.textContent || !node.textContent.trim()) return NodeFilter.FILTER_REJECT;
+                var p = node.parentElement;
+                if (!p) return NodeFilter.FILTER_REJECT;
+                var t = p.tagName.toLowerCase();
+                if (t==='script'||t==='style'||t==='noscript'||t==='textarea'||t==='input'||t==='select'||t==='option'||t==='code'||t==='pre') return NodeFilter.FILTER_REJECT;
+                if (/[\\u4e00-\\u9fa5]/.test(node.textContent)) return NodeFilter.FILTER_REJECT;
+                if (node.textContent.trim().length < 2) return NodeFilter.FILTER_REJECT;
+                return NodeFilter.FILTER_ACCEPT;
             }
-
-            // 翻译源1：MyMemory（免费无key，国际通用）
-            function translateMyMemory(text) {
-                var url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=autodetect|zh-CN';
-                return fetch(url, { method: 'GET' })
-                    .then(function(r) { return r.json(); })
-                    .then(function(d) {
-                        if (d && d.responseStatus === 200 && d.responseData && d.responseData.translatedText) {
-                            return d.responseData.translatedText;
-                        }
-                        throw new Error('mymemory_no_result');
-                    });
-            }
-
-            // 翻译源2：有道翻译（免费无key，国内稳定）
-            function translateYoudao(text) {
-                var url = 'https://fanyi.youdao.com/translate?&doctype=json&type=AUTO&i=' + encodeURIComponent(text);
-                return fetch(url, { method: 'GET' })
-                    .then(function(r) { return r.json(); })
-                    .then(function(d) {
-                        if (d && d.errorCode === 0 && d.translateResult && d.translateResult[0]) {
-                            var result = '';
-                            for (var i = 0; i < d.translateResult[0].length; i++) {
-                                if (d.translateResult[0][i] && d.translateResult[0][i].tgt) {
-                                    result += d.translateResult[0][i].tgt;
-                                }
-                            }
-                            if (result) return result;
-                        }
-                        throw new Error('youdao_no_result');
-                    });
-            }
-
-            // 双源自动降级翻译
-            function translateText(text) {
-                return translateMyMemory(text).catch(function() {
-                    return translateYoudao(text);
-                });
-            }
-
-            var textNodes = collectTextNodes(document.body);
-            if (textNodes.length === 0) {
-                window.__browser_translate_done__ = true;
-                return;
-            }
-
-            // 并发控制：同时最多5个翻译请求
-            var CONCURRENT = 5;
-            var currentIndex = 0;
-            var translatedCount = 0;
-
-            function translateNext() {
-                if (currentIndex >= textNodes.length) {
-                    window.__browser_translate_done__ = true;
-                    return;
-                }
-                var idx = currentIndex++;
-                var node = textNodes[idx];
-                var text = node.textContent.trim();
-                translateText(text)
-                    .then(function(translated) {
-                        if (translated && translated !== text) {
-                            if (!node.__browser_orig_text__) {
-                                node.__browser_orig_text__ = node.textContent;
-                            }
-                            node.textContent = translated;
-                            translatedCount++;
-                        }
-                    })
-                    .catch(function() { /* 单段失败跳过，不影响其他 */ })
-                    .then(translateNext);
-            }
-
-            // 启动并发worker
-            for (var w = 0; w < Math.min(CONCURRENT, textNodes.length); w++) {
-                translateNext();
-            }
-
-            // 暴露恢复原文函数
-            window.__browser_restore_original__ = function() {
-                var all = document.querySelectorAll('*');
-                for (var i = 0; i < all.length; i++) {
-                    for (var j = 0; j < all[i].childNodes.length; j++) {
-                        var n = all[i].childNodes[j];
-                        if (n.nodeType === 3 && n.__browser_orig_text__) {
-                            n.textContent = n.__browser_orig_text__;
-                            n.__browser_orig_text__ = null;
-                        }
-                    }
-                }
-                window.__browser_translate_active__ = false;
-                window.__browser_translate_done__ = false;
-            };
-        })();
-        """
-        currentWebView.evaluateJavaScript(javascript) { [weak self] result, error in
+        });
+        var n;
+        while ((n = walker.nextNode())) {
+            if (!n.__browser_orig_text__) n.__browser_orig_text__ = n.textContent;
+            texts.push(n.textContent.trim());
+        }
+        return JSON.stringify({count: texts.length, texts: texts});
+    })();
+    """
+    /// 启动翻译流程：JS收集文本 → 原生端翻译 → JS应用结果
+    private func startTranslation() {
+        currentWebView.evaluateJavaScript(collectTextJS) { [weak self] result, error in
             guard let self = self else { return }
             if let error = error {
-                print("翻译脚本注入失败: \(error.localizedDescription)")
-                self.showTranslateToast("翻译启动失败，请重试")
-            } else {
+                print("收集文本失败: \(error.localizedDescription)")
+                self.showTranslateToast("翻译启动失败")
+                return
+            }
+            guard let jsonStr = result as? String,
+                  let data = jsonStr.data(using: .utf8),
+                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let texts = dict["texts"] as? [String] else {
+                self.showTranslateToast("页面无可翻译内容")
+                return
+            }
+            if texts.isEmpty {
                 self.isTranslated[self.activeIndex] = true
                 self.updateTranslateButtonState()
+                return
+            }
+            // 标记翻译中
+            self.isTranslated[self.activeIndex] = true
+            self.updateTranslateButtonState()
+            // 原生端并发翻译（5并发）
+            self.translateTextsNative(texts) { translations in
+                self.applyTranslations(translations)
             }
         }
     }
-    /// 恢复原文：调用页面内保存的恢复函数
-    private func restoreOriginalText() {
-        let javascript = """
-        (function() {
-            if (typeof window.__browser_restore_original__ === 'function') {
-                window.__browser_restore_original__();
-                return 'restored';
+    /// 原生端批量翻译：MyMemory首选 → 有道降级，5并发
+    private func translateTextsNative(_ texts: [String], completion: @escaping ([String]) -> Void) {
+        var results = Array(repeating: "", count: texts.count)
+        let group = DispatchGroup()
+        let semaphore = DispatchSemaphore(value: 5)
+        for (i, text) in texts.enumerated() {
+            semaphore.wait()
+            group.enter()
+            translateSingleNative(text) { translated in
+                results[i] = translated ?? text
+                group.leave()
+                semaphore.signal()
             }
-            return 'no_restore_fn';
+        }
+        group.notify(queue: .main) {
+            completion(results)
+        }
+    }
+    /// 原生端单段翻译：MyMemory → 有道双源降级
+    private func translateSingleNative(_ text: String, completion: @escaping (String?) -> Void) {
+        let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
+        // 源1：MyMemory
+        let url1 = URL(string: "https://api.mymemory.translated.net/get?q=\(encoded)&langpair=autodetect|zh-CN")!
+        URLSession.shared.dataTask(with: url1) { data, _, error in
+            if let data = data, error == nil,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let status = json["responseStatus"] as? Int, status == 200,
+               let respData = json["responseData"] as? [String: Any],
+               let translated = respData["translatedText"] as? String,
+               !translated.isEmpty {
+                completion(translated)
+                return
+            }
+            // 源2：有道翻译
+            let url2 = URL(string: "https://fanyi.youdao.com/translate?&doctype=json&type=AUTO&i=\(encoded)")!
+            URLSession.shared.dataTask(with: url2) { data, _, _ in
+                if let data = data,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let code = json["errorCode"] as? Int, code == 0,
+                   let resultArr = json["translateResult"] as? [[[String: Any]]] {
+                    var translated = ""
+                    for seg in resultArr[0] {
+                        if let tgt = seg["tgt"] as? String {
+                            translated += tgt
+                        }
+                    }
+                    if !translated.isEmpty {
+                        completion(translated)
+                        return
+                    }
+                }
+                completion(nil)
+            }.resume()
+        }.resume()
+    }
+    /// JS：将翻译结果应用到页面对应文本节点
+    private func applyTranslations(_ translations: [String]) {
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: translations),
+              let jsonStr = String(data: jsonData, encoding: .utf8) else { return }
+        let applyJS = """
+        (function() {
+            var translations = \(jsonStr);
+            var idx = 0;
+            var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+                acceptNode: function(node) {
+                    if (!node.textContent || !node.textContent.trim()) return NodeFilter.FILTER_REJECT;
+                    var p = node.parentElement;
+                    if (!p) return NodeFilter.FILTER_REJECT;
+                    var t = p.tagName.toLowerCase();
+                    if (t==='script'||t==='style'||t==='noscript'||t==='textarea'||t==='input'||t==='select'||t==='option'||t==='code'||t==='pre') return NodeFilter.FILTER_REJECT;
+                    if (/[\\u4e00-\\u9fa5]/.test(node.textContent)) return NodeFilter.FILTER_REJECT;
+                    if (node.textContent.trim().length < 2) return NodeFilter.FILTER_REJECT;
+                    return NodeFilter.FILTER_ACCEPT;
+                }
+            });
+            var n;
+            while ((n = walker.nextNode())) {
+                if (idx < translations.length && translations[idx]) {
+                    n.textContent = translations[idx];
+                }
+                idx++;
+            }
+            window.__browser_translate_done__ = true;
+            return 'applied';
         })();
         """
-        currentWebView.evaluateJavaScript(javascript) { [weak self] result, error in
-            guard let self = self else { return }
-            if let status = result as? String, status == "restored" {
-                self.isTranslated[self.activeIndex] = false
-                self.updateTranslateButtonState()
-            } else {
-                self.currentWebView.reload()
-                self.isTranslated[self.activeIndex] = false
-                self.updateTranslateButtonState()
+        currentWebView.evaluateJavaScript(applyJS, completionHandler: nil)
+    }
+    /// 恢复原文：调用页面内保存的原文
+    private func restoreOriginalText() {
+        let js = """
+        (function() {
+            var all = document.querySelectorAll('*');
+            for (var i = 0; i < all.length; i++) {
+                for (var j = 0; j < all[i].childNodes.length; j++) {
+                    var n = all[i].childNodes[j];
+                    if (n.nodeType === 3 && n.__browser_orig_text__) {
+                        n.textContent = n.__browser_orig_text__;
+                    }
+                }
             }
+            window.__browser_translate_active__ = false;
+            window.__browser_translate_done__ = false;
+            return 'restored';
+        })();
+        """
+        currentWebView.evaluateJavaScript(js) { [weak self] result, error in
+            guard let self = self else { return }
+            self.isTranslated[self.activeIndex] = false
+            self.updateTranslateButtonState()
         }
     }
-    /// 显示翻译提示（轻量toast，不跳转页面）
+    /// 显示翻译提示（轻量toast）
     private func showTranslateToast(_ message: String) {
         let toast = UILabel()
         toast.text = message
