@@ -59,6 +59,18 @@ class ThirdPartyLoginManager {
         ThirdPartyPlatform(name: "高德地图", schemes: ["iosamap", "amapuri", "amap"],
                           iconName: "map.fill", color: UIColor(red: 0.0, green: 0.56, blue: 0.31, alpha: 1),
                           appStoreURL: "https://apps.apple.com/app/id461709860"),
+        ThirdPartyPlatform(name: "Apple", schemes: ["appleid", "apple"],
+                          iconName: "apple.logo", color: UIColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1),
+                          appStoreURL: nil),
+        ThirdPartyPlatform(name: "GitHub", schemes: ["github", "github-mac"],
+                          iconName: "chevron.left.forwardslash.chevron.right", color: UIColor(red: 0.13, green: 0.13, blue: 0.13, alpha: 1),
+                          appStoreURL: "https://apps.apple.com/app/id1477376905"),
+        ThirdPartyPlatform(name: "Cloudflare", schemes: ["cloudflare", "cfdash"],
+                          iconName: "cloud.fill", color: UIColor(red: 0.95, green: 0.45, blue: 0.12, alpha: 1),
+                          appStoreURL: "https://apps.apple.com/app/id1488498458"),
+        ThirdPartyPlatform(name: "Google", schemes: ["com.googleusercontent.apps", "googlechrome", "google"],
+                          iconName: "g.circle.fill", color: UIColor(red: 0.22, green: 0.49, blue: 0.96, alpha: 1),
+                          appStoreURL: "https://apps.apple.com/app/id284815942"),
     ]
     
     // 判断URL是否为第三方登录/唤起
@@ -71,21 +83,28 @@ class ThirdPartyLoginManager {
         }
         // 检查host中是否包含平台关键词（用于网页授权跳转）
         let host = url.host?.lowercased() ?? ""
-        let thirdPartyHosts = ["open.weixin.qq.com", "open.qzone.qq.com", "connect.qq.com",
-                               "openauth.alipay.com", "api.weibo.com", "passport.baidu.com"]
-        for h in thirdPartyHosts {
-            if host.contains(h) {
-                // 尝试匹配平台
-                if host.contains("weixin") || host.contains("wechat") {
-                    return (true, platforms[0])
-                } else if host.contains("qq") {
-                    return (true, platforms[1])
-                } else if host.contains("alipay") {
-                    return (true, platforms[2])
-                } else if host.contains("weibo") {
-                    return (true, platforms[3])
-                }
+        let thirdPartyHosts: [(String, Int)] = [
+            ("open.weixin.qq.com", 0), ("open.qzone.qq.com", 1), ("connect.qq.com", 1),
+            ("openauth.alipay.com", 2), ("api.weibo.com", 3), ("passport.baidu.com", 10),
+            ("appleid.apple.com", 15), ("github.com/login", 16), ("github.com/login/oauth", 16),
+            ("dash.cloudflare.com", 17), ("accounts.google.com", 18), ("accounts.youtube.com", 18)
+        ]
+        for (h, idx) in thirdPartyHosts {
+            if host.contains(h) && idx < platforms.count {
+                return (true, platforms[idx])
             }
+        }
+        // 识别GitHub OAuth授权回调
+        if host == "github.com" && url.path.contains("/login/oauth") {
+            return (true, platforms[16])
+        }
+        // 识别Google登录
+        if host.contains("google.com") && (url.path.contains("/signin") || url.path.contains("/oauth") || url.path.contains("/auth")) {
+            return (true, platforms[18])
+        }
+        // 识别Apple登录
+        if host.contains("apple.com") && (url.path.contains("auth") || url.path.contains("signin")) {
+            return (true, platforms[15])
         }
         return (false, nil)
     }
