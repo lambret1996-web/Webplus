@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
-	<string>12.5</string>
+	<string>12.6</string>
 	<key>CFBundleVersion</key>
-	<string>12.5</string>
+	<string>12.6</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
@@ -110,9 +110,6 @@
 		<string>github-mac</string>
 		<string>cloudflare</string>
 		<string>cfdash</string>
-		<string>com.googleusercontent.apps</string>
-		<string>googlechrome</string>
-		<string>google</string>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>

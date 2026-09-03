@@ -68,9 +68,6 @@ class ThirdPartyLoginManager {
         ThirdPartyPlatform(name: "Cloudflare", schemes: ["cloudflare", "cfdash"],
                           iconName: "cloud.fill", color: UIColor(red: 0.95, green: 0.45, blue: 0.12, alpha: 1),
                           appStoreURL: "https://apps.apple.com/app/id1488498458"),
-        ThirdPartyPlatform(name: "Google", schemes: ["com.googleusercontent.apps", "googlechrome", "google"],
-                          iconName: "g.circle.fill", color: UIColor(red: 0.22, green: 0.49, blue: 0.96, alpha: 1),
-                          appStoreURL: "https://apps.apple.com/app/id284815942"),
     ]
     
     // 判断URL是否为第三方登录/唤起
@@ -87,7 +84,7 @@ class ThirdPartyLoginManager {
             ("open.weixin.qq.com", 0), ("open.qzone.qq.com", 1), ("connect.qq.com", 1),
             ("openauth.alipay.com", 2), ("api.weibo.com", 3), ("passport.baidu.com", 10),
             ("appleid.apple.com", 15), ("github.com/login", 16), ("github.com/login/oauth", 16),
-            ("dash.cloudflare.com", 17), ("accounts.google.com", 18), ("accounts.youtube.com", 18)
+            ("dash.cloudflare.com", 17)
         ]
         for (h, idx) in thirdPartyHosts {
             if host.contains(h) && idx < platforms.count {
@@ -97,10 +94,6 @@ class ThirdPartyLoginManager {
         // 识别GitHub OAuth授权回调
         if host == "github.com" && url.path.contains("/login/oauth") {
             return (true, platforms[16])
-        }
-        // 识别Google登录
-        if host.contains("google.com") && (url.path.contains("/signin") || url.path.contains("/oauth") || url.path.contains("/auth")) {
-            return (true, platforms[18])
         }
         // 识别Apple登录
         if host.contains("apple.com") && (url.path.contains("auth") || url.path.contains("signin")) {
