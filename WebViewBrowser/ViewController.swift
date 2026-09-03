@@ -2057,116 +2057,30 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         pendingLoginPlatform = nil
     }
 
-    // 边缘手势配置
-    private let edgeWidth: CGFloat = 24.0 // 边缘触发区域
-    private var edgeGestureDirection: UISwipeGestureRecognizer.Direction?
-    private var edgeSnapshotView: UIView?
-    
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
         guard gesture.view === currentWebView else { return }
         let location = gesture.location(in: view)
         let translation = gesture.translation(in: view)
-        let velocity = gesture.velocity(in: view)
-        
         switch gesture.state {
         case .began:
             gestureStartPoint = location
             gestureStartDate = Date()
-            // 判断是否从边缘开始
-            let isLeftEdge = location.x <= edgeWidth
-            let isRightEdge = location.x >= view.bounds.width - edgeWidth
-            guard isLeftEdge || isRightEdge else {
-                edgeGestureDirection = nil
+        case .ended:
+            let elapsed = Date().timeIntervalSince(gestureStartDate)
+            let horizontalDistance = translation.x
+            let verticalDistance = abs(translation.y)
+            guard elapsed <= gestureMaxDuration,
+                  abs(horizontalDistance) > gestureThreshold,
+                  abs(horizontalDistance) > verticalDistance * 1.5 else {
                 return
             }
-            // 确定方向：左边缘右滑=返回，右边缘左滑=前进
-            if isLeftEdge {
-                edgeGestureDirection = .right
+            if horizontalDistance > 0 {
+                if currentWebView.canGoBack { currentWebView.goBack() }
             } else {
-                edgeGestureDirection = .left
+                if currentWebView.canGoForward { currentWebView.goForward() }
             }
-            // 创建页面快照用于跟随动画
-            setupEdgeSnapshot()
-        case .changed:
-            guard let direction = edgeGestureDirection else { return }
-            // 页面跟随手指移动（苹果边缘手势效果）
-            var offset: CGFloat = 0
-            if direction == .right {
-                offset = max(0, translation.x)
-                // 右滑返回：页面向右移动，露出左侧
-                currentWebView.transform = CGAffineTransform(translationX: offset * 0.3, y: 0)
-                currentWebView.alpha = 1.0 - (offset / view.bounds.width) * 0.2
-            } else {
-                offset = max(0, -translation.x)
-                // 左滑前进：页面向左移动
-                currentWebView.transform = CGAffineTransform(translationX: -offset * 0.3, y: 0)
-                currentWebView.alpha = 1.0 - (offset / view.bounds.width) * 0.2
-            }
-        case .ended:
-            guard let direction = edgeGestureDirection else { return }
-            let elapsed = Date().timeIntervalSince(gestureStartDate)
-            let horizontalDistance = direction == .right ? translation.x : -translation.x
-            let verticalDistance = abs(translation.y)
-            let horizontalVelocity = direction == .right ? velocity.x : -velocity.x
-            
-            // 判断是否触发导航：距离超过阈值 或 速度足够快
-            let shouldTrigger = (horizontalDistance > gestureThreshold * 0.6 || horizontalVelocity > 500)
-                               && horizontalDistance > verticalDistance * 1.5
-                               && elapsed < 1.0
-            
-            if shouldTrigger {
-                if direction == .right && currentWebView.canGoBack {
-                    // 完成返回动画
-                    UIView.animate(withDuration: 0.25, animations: {
-                        self.currentWebView.transform = CGAffineTransform(translationX: self.view.bounds.width * 0.3, y: 0)
-                        self.currentWebView.alpha = 0.8
-                    }) { _ in
-                        self.currentWebView.goBack()
-                        UIView.animate(withDuration: 0.2) {
-                            self.currentWebView.transform = .identity
-                            self.currentWebView.alpha = 1.0
-                        }
-                    }
-                } else if direction == .left && currentWebView.canGoForward {
-                    UIView.animate(withDuration: 0.25, animations: {
-                        self.currentWebView.transform = CGAffineTransform(translationX: -self.view.bounds.width * 0.3, y: 0)
-                        self.currentWebView.alpha = 0.8
-                    }) { _ in
-                        self.currentWebView.goForward()
-                        UIView.animate(withDuration: 0.2) {
-                            self.currentWebView.transform = .identity
-                            self.currentWebView.alpha = 1.0
-                        }
-                    }
-                } else {
-                    // 无法导航，回弹
-                    resetEdgeTransform()
-                }
-            } else {
-                // 未触发，回弹
-                resetEdgeTransform()
-            }
-            edgeGestureDirection = nil
-        case .cancelled, .failed:
-            resetEdgeTransform()
-            edgeGestureDirection = nil
         default:
             break
-        }
-    }
-    private func setupEdgeSnapshot() {
-        // 苹果边缘手势效果：页面轻微缩放+阴影
-        currentWebView.layer.shadowColor = UIColor.black.cgColor
-        currentWebView.layer.shadowOffset = CGSize(width: -4, height: 0)
-        currentWebView.layer.shadowRadius = 12
-        currentWebView.layer.shadowOpacity = 0.15
-    }
-    private func resetEdgeTransform() {
-        UIView.animate(withDuration: 0.2, delay: 0, options: .curveEaseOut, animations: {
-            self.currentWebView.transform = .identity
-            self.currentWebView.alpha = 1.0
-        }) { _ in
-            self.currentWebView.layer.shadowOpacity = 0
         }
     }
     // MARK: - 翻译功能

@@ -218,13 +218,38 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
         guard let id = downloadTask.taskDescription else { return }
         taskQueue.sync {
             guard var task = tasks[id] else { return }
+            
+            // 检查HTTP状态码
+            if let httpResponse = downloadTask.response as? HTTPURLResponse {
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    task.status = .failed
+                    tasks[id] = task
+                    persist()
+                    DispatchQueue.main.async { self.onStatusChanged?(task) }
+                    return
+                }
+                if httpResponse.expectedContentLength > 0 {
+                    task.fileSize = httpResponse.expectedContentLength
+                }
+            }
+            
             let fileManager = FileManager.default
             let docsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let downloadsDir = docsDir.appendingPathComponent("Downloads", isDirectory: true)
-            try? fileManager.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+            do {
+                try fileManager.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+            } catch {
+                task.status = .failed
+                tasks[id] = task
+                persist()
+                DispatchQueue.main.async { self.onStatusChanged?(task) }
+                return
+            }
             
             var fileName = task.fileName
             if fileName.isEmpty { fileName = "download_\(Int(Date().timeIntervalSince1970))" }
+            // 清理文件名中的非法字符
+            fileName = fileName.components(separatedBy: CharacterSet(charactersIn: "/\\?%*|"<>:")).joined(separator: "_")
             var destURL = downloadsDir.appendingPathComponent(fileName)
             // 避免重名
             var counter = 1
@@ -240,14 +265,29 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
                 counter += 1
             }
             
+            // 先尝试移动，失败则尝试复制
+            var fileSaved = false
             do {
                 try fileManager.moveItem(at: location, to: destURL)
+                fileSaved = true
+            } catch {
+                do {
+                    try fileManager.copyItem(at: location, to: destURL)
+                    fileSaved = true
+                } catch {
+                    fileSaved = false
+                }
+            }
+            
+            if fileSaved {
                 task.localPath = destURL.path
                 task.fileName = destURL.lastPathComponent
                 task.status = .completed
                 task.finishTime = Date()
-                if let resp = downloadTask.response as? HTTPURLResponse {
-                    task.fileSize = resp.expectedContentLength
+                // 更新实际文件大小
+                if let attrs = try? fileManager.attributesOfItem(atPath: destURL.path),
+                   let size = attrs[.size] as? Int64 {
+                    task.fileSize = size
                 }
                 tasks[id] = task
                 persist()
@@ -256,7 +296,7 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
                     self.onStatusChanged?(task)
                     self.onCompleted?(task)
                 }
-            } catch {
+            } else {
                 task.status = .failed
                 tasks[id] = task
                 persist()
