@@ -364,9 +364,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             bookmarks = bm
         }
         // 广告拦截配置
-        adBlockEnabled = UserDefaults.standard.bool(forKey: adBlockKey)
-        if !UserDefaults.standard.object(forKey: adBlockKey) {
+        if UserDefaults.standard.object(forKey: adBlockKey) == nil {
             adBlockEnabled = true // 默认开启
+        } else {
+            adBlockEnabled = UserDefaults.standard.bool(forKey: adBlockKey)
         }
         if let custom = UserDefaults.standard.stringArray(forKey: customAdDomainsKey) {
             customAdDomains = custom
