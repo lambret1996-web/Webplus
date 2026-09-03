@@ -10,9 +10,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     /// 窗口标签默认名称
     private let windowTitles: [String] = ["窗口一", "窗口二"]
     /// 底部工具栏高度
-    private let tabBarHeight: CGFloat = 64
+    private let tabBarHeight: CGFloat = 72
     /// 翻译按钮尺寸（圆形）
-    private let translateButtonSize: CGFloat = 52
+    private let translateButtonSize: CGFloat = 60
     /// 单次翻译最大文本段数（防止超大页面内存溢出）
     private let maxTranslateSegments = 5000
     // MARK: - UI 组件
@@ -86,7 +86,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         tabButtons.append(tabRight)
         translateButton = UIButton(type: .system)
         translateButton.setTitle("译", for: .normal)
-        translateButton.titleLabel?.font = .systemFont(ofSize: 20, weight: .bold)
+        translateButton.titleLabel?.font = .systemFont(ofSize: 22, weight: .bold)
         translateButton.backgroundColor = .systemBlue
         translateButton.setTitleColor(.white, for: .normal)
         translateButton.layer.cornerRadius = translateButtonSize / 2
@@ -98,16 +98,16 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         translateButton.addTarget(self, action: #selector(translateTapped), for: .touchUpInside)
         tabBar.addSubview(translateButton)
         NSLayoutConstraint.activate([
-            tabLeft.leadingAnchor.constraint(equalTo: tabBar.leadingAnchor, constant: 24),
+            tabLeft.leadingAnchor.constraint(equalTo: tabBar.leadingAnchor, constant: 20),
             tabLeft.centerYAnchor.constraint(equalTo: tabBar.topAnchor, constant: tabBarHeight / 2),
-            tabLeft.widthAnchor.constraint(equalToConstant: 80),
-            tabLeft.heightAnchor.constraint(equalToConstant: 36),
-            tabRight.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -24),
+            tabLeft.widthAnchor.constraint(equalToConstant: 84),
+            tabLeft.heightAnchor.constraint(equalToConstant: 32),
+            tabRight.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -20),
             tabRight.centerYAnchor.constraint(equalTo: tabBar.topAnchor, constant: tabBarHeight / 2),
-            tabRight.widthAnchor.constraint(equalToConstant: 80),
-            tabRight.heightAnchor.constraint(equalToConstant: 36),
+            tabRight.widthAnchor.constraint(equalToConstant: 84),
+            tabRight.heightAnchor.constraint(equalToConstant: 32),
             translateButton.centerXAnchor.constraint(equalTo: tabBar.centerXAnchor),
-            translateButton.centerYAnchor.constraint(equalTo: tabBar.topAnchor, constant: -6),
+            translateButton.centerYAnchor.constraint(equalTo: tabBar.topAnchor, constant: tabBarHeight / 2),
             translateButton.widthAnchor.constraint(equalToConstant: translateButtonSize),
             translateButton.heightAnchor.constraint(equalToConstant: translateButtonSize)
         ])
@@ -117,7 +117,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         button.setTitle(title, for: .normal)
         button.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
         button.tag = tag
-        button.layer.cornerRadius = 18
+        button.layer.cornerRadius = 16
         button.layer.masksToBounds = true
         button.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
         return button
@@ -133,7 +133,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
                 button.setTitleColor(.systemBlue, for: .normal)
                 button.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
             } else {
-                button.backgroundColor = .clear
+                button.backgroundColor = .secondarySystemFill
                 button.setTitleColor(.secondaryLabel, for: .normal)
                 button.titleLabel?.font = .systemFont(ofSize: 14, weight: .regular)
             }
