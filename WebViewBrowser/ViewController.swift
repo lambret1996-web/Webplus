@@ -10,7 +10,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         "https://www.youtube.com"
     ]
     private let tabBarHeight: CGFloat = 28
-    private let translateButtonSize: CGFloat = 24
+    private let translateButtonSize: CGFloat = 20
     private let maxTranslateSegments = 5000
     private let refreshTriggerDistance: CGFloat = 70
     // MARK: - UI 组件
@@ -89,10 +89,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         translateButton = UIButton(type: .custom)
         translateButton.setTitle("译", for: .normal)
         translateButton.titleLabel?.font = .systemFont(ofSize: 10, weight: .bold)
-        translateButton.backgroundColor = .systemBlue
+        translateButton.backgroundColor = UIColor(red: 0.4, green: 0.7, blue: 1.0, alpha: 1.0)
         translateButton.setTitleColor(.white, for: .normal)
         translateButton.layer.cornerRadius = translateButtonSize / 2
-        translateButton.layer.shadowColor = UIColor.systemBlue.cgColor
+        translateButton.layer.shadowColor = UIColor(red: 0.4, green: 0.7, blue: 1.0, alpha: 1.0).cgColor
         translateButton.layer.shadowOffset = CGSize(width: 0, height: 2)
         translateButton.layer.shadowRadius = 6
         translateButton.layer.shadowOpacity = 0.25
@@ -140,7 +140,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             tabButtons[1].widthAnchor.constraint(equalToConstant: 42),
             tabButtons[1].heightAnchor.constraint(equalToConstant: 24),
             // 翻译按钮：CF右边距10px
-            translateButton.leadingAnchor.constraint(equalTo: tabButtons[1].trailingAnchor, constant: 10),
+            translateButton.leadingAnchor.constraint(equalTo: tabButtons[1].trailingAnchor, constant: 5),
             translateButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             translateButton.widthAnchor.constraint(equalToConstant: translateButtonSize),
             translateButton.heightAnchor.constraint(equalToConstant: translateButtonSize),
@@ -401,9 +401,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             translateButton.setTitle("原", for: .normal)
             translateButton.layer.shadowColor = UIColor.systemGreen.cgColor
         } else {
-            translateButton.backgroundColor = .systemBlue
+            translateButton.backgroundColor = UIColor(red: 0.4, green: 0.7, blue: 1.0, alpha: 1.0)
             translateButton.setTitle("译", for: .normal)
-            translateButton.layer.shadowColor = UIColor.systemBlue.cgColor
+            translateButton.layer.shadowColor = UIColor(red: 0.4, green: 0.7, blue: 1.0, alpha: 1.0).cgColor
         }
     }
     private var collectTextJS: String {
