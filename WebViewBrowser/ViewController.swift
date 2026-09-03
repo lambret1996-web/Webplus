@@ -1,6 +1,6 @@
 import UIKit
 import WebKit
-class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UIScrollViewDelegate {
+class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UIScrollViewDelegate, UITextFieldDelegate {
     // MARK: - 配置项
     private let windowTitles: [String] = ["GitHub", "CF", "Google", "YouTube"]
     private let windowURLs: [String] = [
@@ -17,6 +17,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var tabBar: UIView!
     private var tabButtons: [UIButton] = []
     private var translateButton: UIButton!
+    private var urlTextField: UITextField!
     private var webViews: [WKWebView] = []
     private var webViewContainer: UIView!
     private var progressView: UIProgressView!
@@ -98,8 +99,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         translateButton.translatesAutoresizingMaskIntoConstraints = false
         translateButton.addTarget(self, action: #selector(translateTapped), for: .touchUpInside)
         tabBar.addSubview(translateButton)
-        // 标签按钮（动态创建4个：左2 + 翻译按钮 + 右2）
-        let tabWidth: CGFloat = 55
+        // 标签按钮（动态创建4个）
+        let tabWidth: CGFloat = 50
         let tabFont: CGFloat = 10
         for (i, title) in windowTitles.enumerated() {
             let btn = UIButton(type: .system)
@@ -113,22 +114,41 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             tabBar.addSubview(btn)
             tabButtons.append(btn)
         }
+        // 网址输入框（翻译按钮和Google之间）
+        urlTextField = UITextField()
+        urlTextField.placeholder = "输入网址"
+        urlTextField.font = .systemFont(ofSize: 10)
+        urlTextField.borderStyle = .roundedRect
+        urlTextField.backgroundColor = .tertiarySystemBackground
+        urlTextField.keyboardType = .URL
+        urlTextField.autocorrectionType = .no
+        urlTextField.autocapitalizationType = .none
+        urlTextField.returnKeyType = .go
+        urlTextField.clearButtonMode = .whileEditing
+        urlTextField.delegate = self
+        urlTextField.translatesAutoresizingMaskIntoConstraints = false
+        tabBar.addSubview(urlTextField)
         NSLayoutConstraint.activate([
-            // 左1：多窗口
+            // 左1：GitHub
             tabButtons[0].leadingAnchor.constraint(equalTo: tabBar.leadingAnchor, constant: 6),
             tabButtons[0].centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             tabButtons[0].widthAnchor.constraint(equalToConstant: tabWidth),
             tabButtons[0].heightAnchor.constraint(equalToConstant: 24),
-            // 左2：浏览器
+            // 左2：CF
             tabButtons[1].leadingAnchor.constraint(equalTo: tabButtons[0].trailingAnchor, constant: 2),
             tabButtons[1].centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
-            tabButtons[1].widthAnchor.constraint(equalToConstant: tabWidth),
+            tabButtons[1].widthAnchor.constraint(equalToConstant: 42),
             tabButtons[1].heightAnchor.constraint(equalToConstant: 24),
-            // 翻译按钮居中
-            translateButton.centerXAnchor.constraint(equalTo: tabBar.centerXAnchor),
+            // 翻译按钮：CF右边距10px
+            translateButton.leadingAnchor.constraint(equalTo: tabButtons[1].trailingAnchor, constant: 10),
             translateButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             translateButton.widthAnchor.constraint(equalToConstant: translateButtonSize),
             translateButton.heightAnchor.constraint(equalToConstant: translateButtonSize),
+            // 网址输入框：翻译按钮右边距5px，Google左边距5px
+            urlTextField.leadingAnchor.constraint(equalTo: translateButton.trailingAnchor, constant: 5),
+            urlTextField.trailingAnchor.constraint(equalTo: tabButtons[2].leadingAnchor, constant: -5),
+            urlTextField.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
+            urlTextField.heightAnchor.constraint(equalToConstant: 22),
             // 右2：Google
             tabButtons[2].trailingAnchor.constraint(equalTo: tabButtons[3].leadingAnchor, constant: -2),
             tabButtons[2].centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
@@ -140,6 +160,24 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             tabButtons[3].widthAnchor.constraint(equalToConstant: tabWidth),
             tabButtons[3].heightAnchor.constraint(equalToConstant: 24)
         ])
+    }
+    // MARK: - 网址输入框
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        textField.resignFirstResponder()
+        guard let input = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !input.isEmpty else { return true }
+        var urlString = input
+        if !urlString.hasPrefix("http://") && !urlString.hasPrefix("https://") {
+            urlString = "https://" + urlString
+        }
+        if let url = URL(string: urlString) {
+            currentWebView.load(URLRequest(url: url))
+        }
+        return true
+    }
+    /// 更新地址栏显示当前页面URL
+    private func updateURLField() {
+        urlTextField.text = currentWebView.url?.absoluteString ?? ""
     }
     @objc private func tabTapped(_ sender: UIButton) {
         switchToTab(index: sender.tag)
@@ -160,6 +198,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
         updateProgressView()
         updateTranslateButtonState()
+        updateURLField()
     }
     // MARK: - WebView 容器
     private func setupWebViewContainer() {
@@ -628,7 +667,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             isTranslated[index] = false
             if index == activeIndex { updateTranslateButtonState() }
         }
-        if webView === currentWebView { progressView.isHidden = true }
+        if webView === currentWebView {
+            progressView.isHidden = true
+            updateURLField()
+        }
     }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         if let index = webViews.firstIndex(of: webView) { endCustomRefresh(for: index) }
