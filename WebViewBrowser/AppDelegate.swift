@@ -1,18 +1,22 @@
 import UIKit
 // MARK: - 精细化智能缓存：按资源类型区分缓存时长
 class SmartURLCache: URLCache {
-    /// 静态资源缓存时长（秒）：图片/字体/JS/CSS = 24小时
     private let staticCacheTTL: TimeInterval = 24 * 60 * 60
-    /// HTML页面缓存时长（秒）：30分钟
     private let htmlCacheTTL: TimeInterval = 30 * 60
     override func storeCachedResponse(_ cachedResponse: CachedURLResponse, for request: URLRequest) {
         guard let httpResponse = cachedResponse.response as? HTTPURLResponse else {
             super.storeCachedResponse(cachedResponse, for: request)
             return
         }
-        let mimeType = (httpResponse.allHeaderFields["Content-Type"] as? String)?.lowercased() ?? ""
+        // 安全转换 allHeaderFields
+        var headers: [String: String] = [:]
+        for (key, value) in httpResponse.allHeaderFields {
+            if let k = key as? String, let v = value as? String {
+                headers[k] = v
+            }
+        }
+        let mimeType = headers["Content-Type"]?.lowercased() ?? ""
         let urlPath = request.url?.path.lowercased() ?? ""
-        // 判断资源类型
         let isStatic = mimeType.hasPrefix("image/") ||
                        mimeType.contains("javascript") ||
                        mimeType.contains("css") ||
@@ -24,16 +28,16 @@ class SmartURLCache: URLCache {
                        urlPath.hasSuffix(".woff") || urlPath.hasSuffix(".woff2") ||
                        urlPath.hasSuffix(".ttf") || urlPath.hasSuffix(".ico")
         let ttl = isStatic ? staticCacheTTL : htmlCacheTTL
-        // 构造带缓存控制头的响应
-        var headers = httpResponse.allHeaderFields as? [String: String] ?? [:]
         headers["Cache-Control"] = "public, max-age=\(Int(ttl))"
         if let modifiedResponse = HTTPURLResponse(url: httpResponse.url ?? request.url!,
                                                    statusCode: httpResponse.statusCode,
                                                    httpVersion: "HTTP/1.1",
                                                    headerFields: headers) {
+            var userInfo = cachedResponse.userInfo ?? [:]
+            userInfo[AnyHashable("storeDate")] = Date()
             let smartResponse = CachedURLResponse(response: modifiedResponse,
                                                    data: cachedResponse.data,
-                                                   userInfo: cachedResponse.userInfo,
+                                                   userInfo: userInfo,
                                                    storagePolicy: .allowed)
             super.storeCachedResponse(smartResponse, for: request)
         } else {
@@ -48,8 +52,7 @@ class SmartURLCache: URLCache {
               let maxAge = TimeInterval(cacheControl[maxAgeMatch].replacingOccurrences(of: "max-age=", with: "")) else {
             return super.cachedResponse(for: request)
         }
-        // 检查缓存是否过期
-        if let storedDate = cached.userInfo?["storeDate"] as? Date {
+        if let userInfo = cached.userInfo, let storedDate = userInfo[AnyHashable("storeDate")] as? Date {
             if Date().timeIntervalSince(storedDate) > maxAge {
                 removeCachedResponse(for: request)
                 return nil
@@ -74,11 +77,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         config.networkServiceType = .responsiveData
         config.timeoutIntervalForRequest = 15
         config.timeoutIntervalForResource = 30
-        // 共享 session 供预解析/预连接使用
-        URLSession.shared.configuration.httpMaximumConnectionsPerHost = 8
         return true
     }
-    // MARK: UISceneSession Lifecycle
     func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
         return UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
     }

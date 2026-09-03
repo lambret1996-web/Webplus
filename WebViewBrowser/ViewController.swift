@@ -372,13 +372,65 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     // MARK: - 广告&追踪拦截（带CF白名单）
     private func compileAdBlockRules() {
-        // 常见广告/追踪域名，CF相关域名排除
-        let rulesJSON = """
-        [
-          {"trigger":{"url-filter":".*","resource-type":["image","style-sheet","script","font","raw"],"if-domain":["*doubleclick.net","*googleadservices.com","*googlesyndication.com","*googletagmanager.com","*google-analytics.com","*analytics.google.com","*facebook.net","*fbcdn.net","*twitter.com","*ads.twitter.com","*amazon-adsystem.com","*adnxs.com","*criteo.com","*taboola.com","*outbrain.com","*scorecardresearch.com","*quantserve.com","*nr-data.net","*newrelic.com","*hotjar.com","*mouseflow.com","*clarity.ms","*bing.com","*msn.com","*adroll.com","*pubmatic.com","*openx.net","*rubiconproject.com","*casalemedia.com","*exponential.com","*mathtag.com","*advertising.com","*2mdn.net","*2o7.net","*atdmt.com","*falkag.net","*flashtalking.com","*innovid.com","*jivox.com","*kargo.com","*medialand.com","*moatads.com","*narrative.io","*onetag.com","*pixfuture.com","*seedtag.com","*smartadserver.com","*sovrn.com","*taboola.com","*teads.tv","*thetradedesk.com","*triplelift.net","*yieldmo.com","*yieldlab.net","*zemanta.com","*adsrvr.org","*adtechus.com","*advertising.com","*agkn.com","*amgdgt.com","*bluekai.com","*bx1x.com","*chartbeat.com","*chartbeat.net","*comscore.com","*coremetrics.com","*cquotient.com","*crazyegg.com","*criteo.net","*demdex.net","*effectivemeasure.net","*eloqua.com","*episerver.net","*everesttech.net","*exelator.com","*facebook.com","*flashtalking.com","*francisdrake.com","*google.com","*gstatic.com","*heapanalytics.com","*imrworldwide.com","*krxd.net","*lendingtree.com","*liveintent.com","*lnkd.licdn.com","*marketo.com","*maxmind.com","*microsoft.com","*ml314.com","*moat.com","*navegg.com","*nielsen.com","*omtrdc.net","*optimizely.com","*pinterest.com","*px-cloud.net","*quantcast.com","*reddit.com","*retargetly.com","*sailthru.com","*salesforce.com","*serving-sys.com","*sharethrough.com","*simpli.fi","*sitecatalyst.com","*smadex.com","*spotxchange.com","*stickyadstv.com","*tapad.com","*tellapart.com","*tiktok.com","*truste.com","*turn.com","*unrulymedia.com","*veinteractive.com","*vindicosuite.com","*webtrends.com","*wunderkind.co","*yahoo.com","*yandex.ru","*zeotap.com"]},"action":{"type":"block"}},
-          {"trigger":{"url-filter":"dash.cloudflare.com","resource-type":["image","style-sheet","script","font","raw"]},"action":{"type":"ignore-previous-rules"}}
+        // 广告/追踪域名拦截（url-filter匹配目标域名，不影响主流网站自身资源）
+        let adDomains = [
+            "doubleclick\\.net", "googleadservices\\.com", "googlesyndication\\.com",
+            "googletagmanager\\.com", "google-analytics\\.com", "analytics\\.google\\.com",
+            "facebook\\.net", "ads\\.twitter\\.com", "amazon-adsystem\\.com",
+            "adnxs\\.com", "criteo\\.com", "taboola\\.com", "outbrain\\.com",
+            "scorecardresearch\\.com", "quantserve\\.com", "nr-data\\.net",
+            "hotjar\\.com", "mouseflow\\.com", "clarity\\.ms", "adroll\\.com",
+            "pubmatic\\.com", "openx\\.net", "rubiconproject\\.com",
+            "casalemedia\\.com", "mathtag\\.com", "advertising\\.com",
+            "2mdn\\.net", "atdmt\\.com", "flashtalking\\.com", "moatads\\.com",
+            "smartadserver\\.com", "sovrn\\.com", "teads\\.tv",
+            "thetradedesk\\.com", "triplelift\\.net", "yieldmo\\.com",
+            "adsrvr\\.org", "bluekai\\.com", "chartbeat\\.com", "chartbeat\\.net",
+            "comscore\\.com", "crazyegg\\.com", "demdex\\.net", "eloqua\\.com",
+            "everesttech\\.net", "heapanalytics\\.com", "imrworldwide\\.com",
+            "krxd\\.net", "marketo\\.com", "nielsen\\.com", "omtrdc\\.net",
+            "optimizely\\.com", "quantcast\\.com", "sailthru\\.com",
+            "serving-sys\\.com", "sharethrough\\.com", "sitecatalyst\\.com",
+            "tapad\\.com", "tellapart\\.com", "truste\\.com", "turn\\.com",
+            "webtrends\\.com", "zeotap\\.com", "scorecardresearch\\.com",
+            "exponential\\.com", "falkag\\.net", "innovid\\.com", "jivox\\.com",
+            "kargo\\.com", "medialand\\.com", "narrative\\.io", "onetag\\.com",
+            "pixfuture\\.com", "seedtag\\.com", "yieldlab\\.net", "zemanta\\.com",
+            "adtechus\\.com", "agkn\\.com", "amgdgt\\.com", "bx1x\\.com",
+            "coremetrics\\.com", "cquotient\\.com", "criteo\\.net",
+            "effectivemeasure\\.net", "episerver\\.net", "exelator\\.com",
+            "francisdrake\\.com", "lendingtree\\.com", "liveintent\\.com",
+            "lnkd\\.licdn\\.com", "maxmind\\.com", "ml314\\.com", "moat\\.com",
+            "navegg\\.com", "px-cloud\\.net", "retargetly\\.com", "salesforce\\.com",
+            "simpli\\.fi", "smadex\\.com", "spotxchange\\.com",
+            "stickyadstv\\.com", "tiktok\\.com", "unrulymedia\\.com",
+            "veinteractive\\.com", "vindicosuite\\.com", "wunderkind\\.co",
+            "yandex\\.ru", "2o7\\.net"
         ]
-        """
+        var rules: [[String: Any]] = []
+        for domain in adDomains {
+            rules.append([
+                "trigger": [
+                    "url-filter": domain,
+                    "resource-type": ["image", "style-sheet", "script", "font", "raw"]
+                ],
+                "action": ["type": "block"]
+            ])
+        }
+        // CF白名单：不拦截dash.cloudflare.com的任何资源
+        rules.append([
+            "trigger": [
+                "url-filter": "dash\\.cloudflare\\.com",
+                "resource-type": ["image", "style-sheet", "script", "font", "raw"]
+            ],
+            "action": ["type": "ignore-previous-rules"]
+        ])
+        // 序列化为JSON
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: rules, options: []),
+              let rulesJSON = String(data: jsonData, encoding: .utf8) else {
+            print("广告拦截规则JSON序列化失败")
+            return
+        }
         WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "AdBlockRules", encodedContentRuleList: rulesJSON) { [weak self] ruleList, error in
             guard let ruleList = ruleList else {
                 print("广告拦截规则编译失败: \(error?.localizedDescription ?? "未知")")
@@ -397,7 +449,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         // 使用CFHost异步解析DNS，不阻塞主线程
         let hostRef = CFHostCreateWithName(kCFAllocatorDefault, host as CFString).takeRetainedValue()
         var context = CFHostClientContext(version: 0, info: nil, retain: nil, release: nil, copyDescription: nil)
-        CFHostSetClient(hostRef, { (host, typeInfo, error, info) in
+        CFHostSetClient(hostRef, { (_, _, _, _) in
             // DNS解析完成，系统会缓存结果
         }, &context)
         CFHostScheduleWithRunLoop(hostRef, CFRunLoopGetCurrent(), .defaultMode)
