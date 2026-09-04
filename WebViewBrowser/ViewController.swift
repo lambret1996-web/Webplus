@@ -1326,8 +1326,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     
     @objc private func edgeMenuShowDownloads() {
         closeEdgeMenu()
-        // 调用已有的下载面板
-        showDownloadPanel()
+        let panel = DownloadPanelViewController()
+        panel.modalPresentationStyle = .pageSheet
+        if let sheet = panel.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = false
+        }
+        present(panel, animated: true)
     }
     
     @objc private func edgeMenuToggleImageBlock() {
