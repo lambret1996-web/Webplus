@@ -1402,6 +1402,69 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         })
         present(alert, animated: true)
     }
+    /// 编辑已有域名规则
+    private func showEditDomainAlert(at index: Int, original: String, readable: String) {
+        let alert = UIAlertController(title: "编辑规则", message: "修改后将替换原规则", preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.text = readable
+            tf.font = .systemFont(ofSize: 14)
+            tf.autocapitalizationType = .none
+            tf.autocorrectionType = .no
+            tf.keyboardType = .URL
+        }
+        alert.addAction(UIAlertAction(title: "保存", style: .default) { _ in
+            guard let input = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !input.isEmpty else {
+                self.showCustomAdManager()
+                return
+            }
+            // 智能解析（与添加时相同）
+            var raw = input.lowercased()
+            raw = raw.replacingOccurrences(of: "https://", with: "")
+            raw = raw.replacingOccurrences(of: "http://", with: "")
+            if raw.hasPrefix("www.") { raw = String(raw.dropFirst(4)) }
+            if let colonRange = raw.range(of: ":"), let slashRange = raw.range(of: "/") {
+                if colonRange.lowerBound < slashRange.lowerBound {
+                    raw = String(raw[..<colonRange.lowerBound]) + String(raw[slashRange.lowerBound...])
+                }
+            }
+            raw = raw.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            var domainPart = raw
+            var pathPart = ""
+            if let slashRange = raw.range(of: "/") {
+                domainPart = String(raw[..<slashRange.lowerBound])
+                pathPart = String(raw[slashRange.lowerBound...])
+            }
+            guard domainPart.contains(".") else {
+                self.showToast("无效输入")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.showEditDomainAlert(at: index, original: original, readable: readable) }
+                return
+            }
+            domainPart = domainPart.replacingOccurrences(of: ".", with: "\\.")
+            if !pathPart.isEmpty {
+                pathPart = pathPart.replacingOccurrences(of: ".", with: "\\.")
+                pathPart = pathPart.replacingOccurrences(of: "*", with: ".*")
+            }
+            let finalRule = domainPart + pathPart
+            self.customAdDomains[index] = finalRule
+            UserDefaults.standard.set(self.customAdDomains, forKey: self.customAdDomainsKey)
+            self.compileAdBlockRules()
+            let newReadable = finalRule.replacingOccurrences(of: "\\.", with: ".").replacingOccurrences(of: ".*", with: "*")
+            self.showToast("已更新：\(newReadable)")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.showCustomAdManager() }
+        })
+        alert.addAction(UIAlertAction(title: "删除此规则", style: .destructive) { _ in
+            self.customAdDomains.remove(at: index)
+            UserDefaults.standard.set(self.customAdDomains, forKey: self.customAdDomainsKey)
+            self.compileAdBlockRules()
+            self.showToast("已删除：\(readable)")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.showCustomAdManager() }
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in
+            self.showCustomAdManager()
+        })
+        present(alert, animated: true)
+    }
     /// 添加域名弹窗
     private func showAddDomainAlert() {
         let alert = UIAlertController(title: "添加域名", message: "可直接粘贴完整URL，自动清洗", preferredStyle: .alert)
