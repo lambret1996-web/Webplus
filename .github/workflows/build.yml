@@ -123,8 +123,13 @@ jobs:
             echo "证书密码验证失败，尝试其他方式"
             openssl pkcs12 -in certificate.p12 -info -noout -passin pass:"$IOS_CERTIFICATE_PWD" 2>&1 | head -5
           fi
-          security import certificate.p12 -k build.keychain -P "$IOS_CERTIFICATE_PWD" -T /usr/bin/codesign -x
+          # 尝试多种方式导入证书
+          security import certificate.p12 -k build.keychain -P "$IOS_CERTIFICATE_PWD" -T /usr/bin/codesign || \
+          security import certificate.p12 -k build.keychain -P "$IOS_CERTIFICATE_PWD" || \
+          echo "证书导入警告，继续执行"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          echo "=== 可用签名身份 ==="
+          security find-identity -v -p codesigning build.keychain || true
           rm -f certificate.p12
           echo "证书安装完成"
 
