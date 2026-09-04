@@ -1,4 +1,5 @@
 import UIKit
+import WebKit
 
 // MARK: - 下载任务模型
 struct DownloadTask: Codable, Equatable {
@@ -70,6 +71,8 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
     private var session: URLSession!
     private var tasks: [String: DownloadTask] = [:]
     private var urlSessionTasks: [String: URLSessionDownloadTask] = [:]
+    private var wkDownloads: [String: WKDownload] = [:]
+    private var wkProgressObservers: [String: NSKeyValueObservation] = [:]
     private let taskQueue = DispatchQueue(label: "download.manager.queue")
     private let maxConcurrent = 3
     
@@ -344,4 +347,96 @@ extension DownloadTask {
         fmt.dateFormat = "MM-dd HH:mm"
         return fmt.string(from: finishTime ?? startTime)
     }
+    // MARK: - WKDownload 支持
+    func startWKDownload(download: WKDownload, url: String, fileName: String, fileSize: Int64, mimeType: String) {
+        let id = UUID().uuidString
+        taskQueue.sync {
+            var task = DownloadTask(
+                id: id,
+                url: url,
+                fileName: fileName,
+                fileSize: fileSize > 0 ? fileSize : 0,
+                downloadedSize: 0,
+                status: .downloading,
+                startTime: Date(),
+                finishTime: nil,
+                localPath: nil,
+                mimeType: mimeType
+            )
+            tasks[id] = task
+            wkDownloads[id] = download
+            persist()
+            DispatchQueue.main.async {
+                self.onStatusChanged?(task)
+            }
+        }
+        // KVO观察下载进度
+        let observation = download.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
+            guard let self = self else { return }
+            self.taskQueue.sync {
+                guard var task = self.tasks[id] else { return }
+                task.downloadedSize = Int64(Double(task.fileSize) * progress.fractionCompleted)
+                self.tasks[id] = task
+                DispatchQueue.main.async {
+                    self.onProgress?(task)
+                }
+            }
+        }
+        taskQueue.sync {
+            wkProgressObservers[id] = observation
+        }
+    }
+    
+    func completeWKDownload(download: WKDownload) {
+        taskQueue.sync {
+            // 找到对应的任务
+            guard let id = wkDownloads.first(where: { $0.value === download })?.key else { return }
+            guard var task = tasks[id] else { return }
+            // 移除KVO观察
+            wkProgressObservers[id]?.invalidate()
+            wkProgressObservers.removeValue(forKey: id)
+            wkDownloads.removeValue(forKey: id)
+            // 更新任务状态
+            task.status = .completed
+            task.finishTime = Date()
+            task.downloadedSize = task.fileSize
+            // 获取保存路径
+            if let destURL = download.fileURL {
+                task.localPath = destURL.path
+                // 更新实际文件大小
+                if let attrs = try? FileManager.default.attributesOfItem(atPath: destURL.path),
+                   let size = attrs[.size] as? Int64 {
+                    task.fileSize = size
+                    task.downloadedSize = size
+                }
+            }
+            tasks[id] = task
+            persist()
+            DispatchQueue.main.async {
+                self.onProgress?(task)
+                self.onStatusChanged?(task)
+                self.onCompleted?(task)
+            }
+        }
+    }
+    
+    func failWKDownload(download: WKDownload, error: Error) {
+        taskQueue.sync {
+            guard let id = wkDownloads.first(where: { $0.value === download })?.key else { return }
+            guard var task = tasks[id] else { return }
+            // 移除KVO观察
+            wkProgressObservers[id]?.invalidate()
+            wkProgressObservers.removeValue(forKey: id)
+            wkDownloads.removeValue(forKey: id)
+            // 更新任务状态
+            task.status = .failed
+            tasks[id] = task
+            persist()
+            DispatchQueue.main.async {
+                self.onStatusChanged?(task)
+            }
+        }
+    }
+
+
 }

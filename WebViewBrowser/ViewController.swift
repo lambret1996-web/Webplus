@@ -3591,11 +3591,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         let response = navigationResponse.response
         let fileName = response.suggestedFilename ?? downloadURL.lastPathComponent
         let mime = response.mimeType ?? ""
-        // 显示底部下载确认条
-        DispatchQueue.main.async {
-            self.showDownloadConfirm(url: downloadURL.absoluteString, fileName: fileName)
-        }
-        decisionHandler(.cancel)
+        // 使用WKWebView原生下载，保留完整请求上下文（Cookie、认证、重定向）
+        decisionHandler(.download)
     }
     // MARK: - WKNavigationDelegate
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -3819,4 +3816,63 @@ extension ViewController: UIGestureRecognizerDelegate {
             }
         }
     }
+    // MARK: - WKDownloadDelegate
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+        // 记录下载任务
+        if let url = navigationResponse.response.url?.absoluteString {
+            let fileName = navigationResponse.response.suggestedFilename ?? (URL(string: url)?.lastPathComponent ?? "download")
+            let fileSize = (navigationResponse.response as? HTTPURLResponse)?.expectedContentLength ?? 0
+            DownloadManager.shared.startWKDownload(download: download, url: url, fileName: fileName, fileSize: fileSize, mimeType: navigationResponse.response.mimeType ?? "")
+            DispatchQueue.main.async {
+                self.showToast("开始下载：\(fileName)")
+            }
+        }
+    }
+    
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+        let fileManager = FileManager.default
+        let docsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let downloadsDir = docsDir.appendingPathComponent("Downloads", isDirectory: true)
+        // 确保目录存在
+        try? fileManager.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+        // 处理文件名，避免非法字符
+        var fileName = suggestedFilename
+        fileName = fileName.components(separatedBy: CharacterSet(charactersIn: "/\\?%*|\"<>:")).joined(separator: "_")
+        if fileName.isEmpty { fileName = "download_\(Int(Date().timeIntervalSince1970))" }
+        var destURL = downloadsDir.appendingPathComponent(fileName)
+        // 避免重名，自动重命名
+        var counter = 1
+        while fileManager.fileExists(atPath: destURL.path) {
+            let ext = (fileName as NSString).pathExtension
+            let base = (fileName as NSString).deletingPathExtension
+            if ext.isEmpty {
+                fileName = "\(base)_\(counter)"
+            } else {
+                fileName = "\(base)_\(counter).\(ext)"
+            }
+            destURL = downloadsDir.appendingPathComponent(fileName)
+            counter += 1
+        }
+        print("[Download] 目标路径: \(destURL.path)")
+        completionHandler(destURL)
+    }
+    
+    func downloadDidFinish(_ download: WKDownload) {
+        print("[Download] 下载完成")
+        DownloadManager.shared.completeWKDownload(download: download)
+        DispatchQueue.main.async {
+            self.showToast("下载完成，已保存到 Downloads 文件夹")
+        }
+    }
+    
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        print("[Download] 下载失败: \(error.localizedDescription)")
+        DownloadManager.shared.failWKDownload(download: download, error: error)
+        DispatchQueue.main.async {
+            self.showToast("下载失败：\(error.localizedDescription)")
+        }
+    }
+
+
 }
