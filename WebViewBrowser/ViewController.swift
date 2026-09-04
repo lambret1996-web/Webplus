@@ -50,6 +50,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var webViewContainer: UIView!
     private var progressView: UIProgressView!
     private var panGestures: [UIPanGestureRecognizer] = []
+    // 右边缘下滑功能菜单
+    private var edgeMenuView: UIView!
+    private var edgeMenuLeadingConstraint: NSLayoutConstraint!
+    private var edgeMenuIsOpen = false
+    private var edgeMenuStartX: CGFloat = 0
+    private var edgeMenuPanStart: CGPoint = .zero
     /// 自定义下拉刷新
     private var refreshViews: [UIView] = []
     private var refreshIndicators: [UIActivityIndicatorView] = []
@@ -99,6 +105,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         setupWebViews()
         setupProgressView()
         setupGestures()
+        setupEdgeMenu()
         switchToTab(index: 0)
         loadInitialPages()
         // 下载管理回调
@@ -1175,6 +1182,206 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             self.refreshViews[index].isHidden = true
         }
     }
+    // MARK: - 右边缘下滑功能菜单
+    private func setupEdgeMenu() {
+        let menuWidth = view.bounds.width * 0.75
+        edgeMenuView = UIView()
+        edgeMenuView.backgroundColor = .systemBackground
+        edgeMenuView.layer.cornerRadius = 16
+        edgeMenuView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+        edgeMenuView.layer.shadowColor = UIColor.black.cgColor
+        edgeMenuView.layer.shadowOpacity = 0.3
+        edgeMenuView.layer.shadowRadius = 10
+        edgeMenuView.layer.shadowOffset = CGSize(width: -5, height: 0)
+        edgeMenuView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(edgeMenuView)
+        
+        edgeMenuLeadingConstraint = edgeMenuView.leadingAnchor.constraint(equalTo: view.trailingAnchor)
+        NSLayoutConstraint.activate([
+            edgeMenuLeadingConstraint,
+            edgeMenuView.topAnchor.constraint(equalTo: view.topAnchor),
+            edgeMenuView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            edgeMenuView.widthAnchor.constraint(equalToConstant: menuWidth)
+        ])
+        
+        // 标题栏
+        let titleLabel = UILabel()
+        titleLabel.text = "功能菜单"
+        titleLabel.font = .boldSystemFont(ofSize: 18)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        edgeMenuView.addSubview(titleLabel)
+        
+        let closeButton = UIButton(type: .system)
+        closeButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+        closeButton.addTarget(self, action: #selector(closeEdgeMenu), for: .touchUpInside)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        edgeMenuView.addSubview(closeButton)
+        
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: edgeMenuView.safeAreaLayoutGuide.topAnchor, constant: 20),
+            titleLabel.leadingAnchor.constraint(equalTo: edgeMenuView.leadingAnchor, constant: 20),
+            closeButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            closeButton.trailingAnchor.constraint(equalTo: edgeMenuView.trailingAnchor, constant: -20),
+            closeButton.widthAnchor.constraint(equalToConstant: 30),
+            closeButton.heightAnchor.constraint(equalToConstant: 30)
+        ])
+        
+        // 功能按钮列表
+        let functions: [(String, String, Selector)] = [
+            ("bookmark", "增加书签", #selector(edgeMenuAddBookmark)),
+            ("book", "书签列表", #selector(edgeMenuShowBookmarks)),
+            ("clock", "历史记录", #selector(edgeMenuShowHistory)),
+            ("square.and.arrow.down", "下载管理", #selector(edgeMenuShowDownloads)),
+            ("photo", "全局图片拦截", #selector(edgeMenuToggleImageBlock)),
+            ("globe", "UA 切换", #selector(edgeMenuSwitchUA)),
+            ("hand.raised", "广告黑名单", #selector(edgeMenuManageAdBlock)),
+            ("trash", "清空当前站点缓存", #selector(edgeMenuClearSiteCache)),
+            ("trash.fill", "一键清空缓存", #selector(edgeMenuClearAllCache)),
+            ("gear", "设置", #selector(edgeMenuShowSettings))
+        ]
+        
+        var previousView: UIView = titleLabel
+        for (icon, title, action) in functions {
+            let button = createMenuButton(icon: icon, title: title, action: action)
+            edgeMenuView.addSubview(button)
+            NSLayoutConstraint.activate([
+                button.topAnchor.constraint(equalTo: previousView.bottomAnchor, constant: previousView == titleLabel ? 20 : 0),
+                button.leadingAnchor.constraint(equalTo: edgeMenuView.leadingAnchor),
+                button.trailingAnchor.constraint(equalTo: edgeMenuView.trailingAnchor),
+                button.heightAnchor.constraint(equalToConstant: 52)
+            ])
+            previousView = button
+        }
+    }
+    
+    private func createMenuButton(icon: String, title: String, action: Selector) -> UIButton {
+        let button = UIButton(type: .system)
+        let iconView = UIImageView(image: UIImage(systemName: icon))
+        iconView.tintColor = .label
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        let label = UILabel()
+        label.text = title
+        label.font = .systemFont(ofSize: 16)
+        label.textColor = .label
+        label.translatesAutoresizingMaskIntoConstraints = false
+        button.addSubview(iconView)
+        button.addSubview(label)
+        NSLayoutConstraint.activate([
+            iconView.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 20),
+            iconView.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 24),
+            iconView.heightAnchor.constraint(equalToConstant: 24),
+            label.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 15),
+            label.centerYAnchor.constraint(equalTo: button.centerYAnchor)
+        ])
+        button.addTarget(self, action: action, for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }
+    
+    @objc private func closeEdgeMenu() {
+        setEdgeMenu(open: false)
+    }
+    
+    // MARK: - 边缘菜单功能
+    @objc private func edgeMenuAddBookmark() {
+        closeEdgeMenu()
+        // 调用已有的添加书签功能
+        if let url = currentWebView.url?.absoluteString, let title = currentWebView.title {
+            var bookmarks = UserDefaults.standard.array(forKey: "savedBookmarks") as? [[String: String]] ?? []
+            bookmarks.append(["title": title, "url": url])
+            UserDefaults.standard.set(bookmarks, forKey: "savedBookmarks")
+            showToast("已添加书签")
+        }
+    }
+    
+    @objc private func edgeMenuShowBookmarks() {
+        closeEdgeMenu()
+        let bookmarks = UserDefaults.standard.array(forKey: "savedBookmarks") as? [[String: String]] ?? []
+        let alert = UIAlertController(title: "书签列表", message: nil, preferredStyle: .actionSheet)
+        for bm in bookmarks {
+            alert.addAction(UIAlertAction(title: bm["title"] ?? bm["url"] ?? "", style: .default) { _ in
+                if let url = URL(string: bm["url"] ?? "") {
+                    self.currentWebView.load(URLRequest(url: url))
+                }
+            })
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    
+    @objc private func edgeMenuShowHistory() {
+        closeEdgeMenu()
+        // 显示历史记录（使用WKWebView的backForwardList）
+        let history = currentWebView.backForwardList
+        let alert = UIAlertController(title: "历史记录", message: "最近访问", preferredStyle: .actionSheet)
+        for item in history.backList.reversed().prefix(10) {
+            alert.addAction(UIAlertAction(title: item.title ?? item.url.absoluteString, style: .default) { _ in
+                self.currentWebView.go(to: item)
+            })
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    
+    @objc private func edgeMenuShowDownloads() {
+        closeEdgeMenu()
+        // 调用已有的下载面板
+        showDownloadPanel()
+    }
+    
+    @objc private func edgeMenuToggleImageBlock() {
+        closeEdgeMenu()
+        toggleGlobalImageBlock()
+    }
+    
+    @objc private func edgeMenuSwitchUA() {
+        closeEdgeMenu()
+        // 循环切换UA
+        currentUAIndex = (currentUAIndex + 1) % uaPresets.count
+        UserDefaults.standard.set(currentUAIndex, forKey: uaIndexKey)
+        for wv in webViews {
+            wv.customUserAgent = uaPresets[currentUAIndex]
+        }
+        showToast("UA已切换：\(uaPresets[currentUAIndex].prefix(20))...")
+        currentWebView.reload()
+    }
+    
+    @objc private func edgeMenuManageAdBlock() {
+        closeEdgeMenu()
+        showCustomAdManager()
+    }
+    
+    @objc private func edgeMenuClearSiteCache() {
+        closeEdgeMenu()
+        if let host = currentWebView.url?.host {
+            fourLevelCache.clearCacheForSite(host)
+            showToast("已清理 \(host) 缓存")
+            currentWebView.reload()
+        }
+    }
+    
+    @objc private func edgeMenuClearAllCache() {
+        closeEdgeMenu()
+        fourLevelCache.removeAllCachedResponses()
+        showToast("已清空全部缓存")
+    }
+    
+    @objc private func edgeMenuShowSettings() {
+        closeEdgeMenu()
+        // 显示设置菜单（复用翻译键长按菜单）
+        handleTranslateLongPress(UILongPressGestureRecognizer())
+    }
+    
+    private func setEdgeMenu(open: Bool) {
+        edgeMenuIsOpen = open
+        let menuWidth = view.bounds.width * 0.75
+        edgeMenuLeadingConstraint.constant = open ? -menuWidth : 0
+        UIView.animate(withDuration: open ? 0.3 : 0.25, delay: 0, usingSpringWithDamping: open ? 0.85 : 1.0, initialSpringVelocity: 0.5, options: .curveEaseInOut) {
+            self.view.layoutIfNeeded()
+        }
+    }
+    
     // MARK: - 手势导航
     private func setupGestures() {
         for webView in webViews {
@@ -1198,6 +1405,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         let translateLongPress = UILongPressGestureRecognizer(target: self, action: #selector(handleTranslateLongPress(_:)))
         translateLongPress.minimumPressDuration = 0.8
         translateButton.addGestureRecognizer(translateLongPress)
+        // 右边缘下滑→功能菜单
+        let edgePan = UIPanGestureRecognizer(target: self, action: #selector(handleEdgeMenuPan(_:)))
+        edgePan.delegate = self
+        edgePan.cancelsTouchesInView = false
+        view.addGestureRecognizer(edgePan)
         // 屏幕底部中央双击→网页内文字搜索
         let bottomCenterDoubleTap = UITapGestureRecognizer(target: self, action: #selector(handleBottomCenterDoubleTap(_:)))
         bottomCenterDoubleTap.numberOfTapsRequired = 2
@@ -2275,6 +2487,65 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         pendingLoginPlatform = nil
     }
 
+    @objc private func handleEdgeMenuPan(_ gesture: UIPanGestureRecognizer) {
+        let location = gesture.location(in: view)
+        let translation = gesture.translation(in: view)
+        let velocity = gesture.velocity(in: view)
+        let menuWidth = view.bounds.width * 0.75
+        let edgeThreshold: CGFloat = 44
+        let horizontalThreshold: CGFloat = 30
+        let triggerThreshold: CGFloat = 20
+        let openThreshold: CGFloat = 60
+        let fastVelocity: CGFloat = 500
+        
+        switch gesture.state {
+        case .began:
+            // 检查起始点是否在右边缘
+            if view.bounds.width - location.x <= edgeThreshold {
+                edgeMenuStartX = edgeMenuLeadingConstraint.constant
+                edgeMenuPanStart = location
+            } else {
+                gesture.isEnabled = false
+                gesture.isEnabled = true
+            }
+        case .changed:
+            // 检查是否满足触发条件
+            let dx = edgeMenuPanStart.x - location.x // 向左为正
+            let dy = location.y - edgeMenuPanStart.y // 向下为正
+            
+            if !edgeMenuIsOpen && dx >= horizontalThreshold && dy >= triggerThreshold {
+                // 跟手阶段：菜单从右侧滑入
+                let progress = min(dy / 200, 1.0)
+                edgeMenuLeadingConstraint.constant = -menuWidth * progress
+            } else if edgeMenuIsOpen {
+                // 菜单已打开，左滑收起
+                let progress = min(max(-translation.x / menuWidth, 0), 1)
+                edgeMenuLeadingConstraint.constant = -menuWidth + menuWidth * progress
+            }
+        case .ended:
+            let dy = location.y - edgeMenuPanStart.y
+            let dx = edgeMenuPanStart.x - location.x
+            
+            if !edgeMenuIsOpen {
+                // 快速下滑或下滑距离足够→展开
+                if velocity.y > fastVelocity || (dx >= horizontalThreshold && dy >= openThreshold) {
+                    setEdgeMenu(open: true)
+                } else {
+                    setEdgeMenu(open: false)
+                }
+            } else {
+                // 快速左滑或左滑距离足够→收起
+                if velocity.x < -fastVelocity || translation.x > openThreshold {
+                    setEdgeMenu(open: false)
+                } else {
+                    setEdgeMenu(open: true)
+                }
+            }
+        default:
+            break
+        }
+    }
+    
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
         guard gesture.view === currentWebView else { return }
         let location = gesture.location(in: view)
@@ -2636,7 +2907,14 @@ extension ViewController: UIGestureRecognizerDelegate {
     }
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
+        let location = pan.location(in: view)
         let velocity = pan.velocity(in: view)
+        // 右边缘下滑手势：起始点在右边缘44pt内，且垂直下滑
+        let isRightEdge = view.bounds.width - location.x <= 44
+        if isRightEdge && velocity.y > 100 {
+            return true
+        }
+        // 普通水平滑动手势（前进/后退）
         return abs(velocity.x) > abs(velocity.y) * 1.2
     }
 }
