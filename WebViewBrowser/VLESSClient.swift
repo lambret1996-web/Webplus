@@ -300,3 +300,179 @@ class VLESSNodeManager {
         return VLESSConfig(uuid: uuid, host: host, port: port, wsPath: wsPath, wsHost: wsHost, tls: tls, name: name)
     }
 }
+
+
+// 订阅管理器 - 支持小火箭/Shadowrocket主流订阅格式
+class SubscriptionManager {
+    static let shared = SubscriptionManager()
+    private let subscriptionsKey = "vlessSubscriptions"
+    
+    struct Subscription: Codable {
+        var url: String
+        var name: String
+        var lastUpdate: Date
+    }
+    
+    var subscriptions: [Subscription] {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: subscriptionsKey),
+                  let subs = try? JSONDecoder().decode([Subscription].self, from: data) else {
+                return []
+            }
+            return subs
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                UserDefaults.standard.set(data, forKey: subscriptionsKey)
+            }
+        }
+    }
+    
+    func addSubscription(url: String, name: String) {
+        var list = subscriptions
+        list.append(Subscription(url: url, name: name, lastUpdate: Date()))
+        subscriptions = list
+    }
+    
+    func removeSubscription(at index: Int) {
+        var list = subscriptions
+        list.remove(at: index)
+        subscriptions = list
+    }
+    
+    // 从订阅链接获取节点列表
+    func fetchNodes(from url: String, completion: @escaping ([VLESSConfig], Error?) -> Void) {
+        guard let urlObj = URL(string: url) else {
+            completion([], NSError(domain: "Subscription", code: -1, userInfo: [NSLocalizedDescriptionKey: "无效的订阅链接"]))
+            return
+        }
+        
+        let task = URLSession.shared.dataTask(with: urlObj) { data, response, error in
+            if let error = error {
+                completion([], error)
+                return
+            }
+            
+            guard let data = data else {
+                completion([], NSError(domain: "Subscription", code: -2, userInfo: [NSLocalizedDescriptionKey: "无数据"]))
+                return
+            }
+            
+            var nodes: [VLESSConfig] = []
+            
+            // 尝试1: 直接解析为文本（可能是Base64编码或纯文本）
+            if let text = String(data: data, encoding: .utf8) {
+                // 尝试Base64解码
+                if let decodedData = Data(base64Encoded: text.trimmingCharacters(in: .whitespacesAndNewlines)),
+                   let decodedText = String(data: decodedData, encoding: .utf8) {
+                    nodes = self.parseNodes(from: decodedText)
+                } else {
+                    // 纯文本，直接解析
+                    nodes = self.parseNodes(from: text)
+                }
+            }
+            
+            completion(nodes, nil)
+        }
+        task.resume()
+    }
+    
+    // 解析节点文本，支持vless://、vmess://、trojan://、ss://
+    private func parseNodes(from text: String) -> [VLESSConfig] {
+        var nodes: [VLESSConfig] = []
+        let lines = text.components(separatedBy: .newlines)
+        
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            
+            if trimmed.hasPrefix("vless://") {
+                if let node = VLESSNodeManager.shared.parseVLESSURL(trimmed) {
+                    nodes.append(node)
+                }
+            } else if trimmed.hasPrefix("vmess://") {
+                if let node = parseVMess(trimmed) {
+                    nodes.append(node)
+                }
+            } else if trimmed.hasPrefix("trojan://") {
+                if let node = parseTrojan(trimmed) {
+                    nodes.append(node)
+                }
+            }
+        }
+        
+        return nodes
+    }
+    
+    // 解析vmess://链接（Base64编码的JSON）
+    private func parseVMess(_ url: String) -> VLESSConfig? {
+        let content = String(url.dropFirst(8))
+        guard let data = Data(base64Encoded: content),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        
+        guard let uuid = json["id"] as? String,
+              let host = json["add"] as? String,
+              let portStr = json["port"] as? String,
+              let port = Int(portStr) else {
+            return nil
+        }
+        
+        let name = json["ps"] as? String ?? "VMess节点"
+        let wsPath = json["path"] as? String ?? "/"
+        let wsHost = json["host"] as? String
+        let tls = (json["tls"] as? String) == "tls"
+        
+        return VLESSConfig(uuid: uuid, host: host, port: port, wsPath: wsPath, wsHost: wsHost, tls: tls, name: name)
+    }
+    
+    // 解析trojan://链接
+    private func parseTrojan(_ url: String) -> VLESSConfig? {
+        let content = String(url.dropFirst(9))
+        let parts = content.components(separatedBy: "#")
+        let name = parts.count > 1 ? parts[1] : "Trojan节点"
+        
+        let mainPart = parts[0]
+        let atParts = mainPart.components(separatedBy: "@")
+        guard atParts.count == 2 else { return nil }
+        
+        let password = atParts[0]
+        let hostPortQuery = atParts[1]
+        
+        let queryParts = hostPortQuery.components(separatedBy: "?")
+        let hostPort = queryParts[0]
+        
+        let hpParts = hostPort.components(separatedBy: ":")
+        guard hpParts.count == 2, let port = Int(hpParts[1]) else { return nil }
+        let host = hpParts[0]
+        
+        // Trojan用password作为UUID（简化处理）
+        return VLESSConfig(uuid: password, host: host, port: port, wsPath: "/", wsHost: nil, tls: true, name: name)
+    }
+    
+    // 更新所有订阅
+    func updateAllSubscriptions(completion: @escaping (Int) -> Void) {
+        let group = DispatchGroup()
+        var totalNewNodes = 0
+        
+        for sub in subscriptions {
+            group.enter()
+            fetchNodes(from: sub.url) { nodes, error in
+                if let nodes = nodes, !nodes.isEmpty {
+                    for node in nodes {
+                        if !VLESSNodeManager.shared.nodes.contains(where: { $0.uuid == node.uuid && $0.host == node.host }) {
+                            VLESSNodeManager.shared.addNode(node)
+                            totalNewNodes += 1
+                        }
+                    }
+                }
+                group.leave()
+            }
+        }
+        
+        group.notify(queue: .main) {
+            completion(totalNewNodes)
+        }
+    }
+}

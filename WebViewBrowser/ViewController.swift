@@ -1730,18 +1730,32 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             return
         }
         showToast("正在启动代理...")
+        // 先删除所有旧的LightBrowserProxy配置，避免"需要更新"问题
+        NETunnelProviderManager.loadAllFromPreferences { [weak self] oldManagers, _ in
+            let group = DispatchGroup()
+            for oldManager in oldManagers ?? [] {
+                if oldManager.localizedDescription == "LightBrowserProxy" {
+                    group.enter()
+                    oldManager.removeFromPreferences { _ in
+                        group.leave()
+                    }
+                }
+            }
+            group.notify(queue: .main) {
+                // 旧配置删除完成后，创建新配置
+                self?.createAndStartProxy(useVLESS: useVLESS)
+            }
+        }
+    }
+    
+    private func createAndStartProxy(useVLESS: Bool) {
         NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
             if let error = error {
                 self?.showToast("启动失败: \(error.localizedDescription)")
                 return
             }
-            let manager: NETunnelProviderManager
-            if let existing = managers?.first(where: { $0.localizedDescription == "LightBrowserProxy" }) {
-                manager = existing
-            } else {
-                manager = NETunnelProviderManager()
-                manager.localizedDescription = "LightBrowserProxy"
-            }
+            let manager = NETunnelProviderManager()
+            manager.localizedDescription = "LightBrowserProxy"
             let proto = NETunnelProviderProtocol()
             proto.providerBundleIdentifier = "com.lambret.webplus.AppProxyExtension"
             // 修复: 使用节点地址代替127.0.0.1，避免"需要更新"提示
@@ -1823,6 +1837,14 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             self.showAddVLESSNode()
         })
         
+        alert.addAction(UIAlertAction(title: "📡 订阅管理", style: .default) { _ in
+            self.showSubscriptionManager()
+        })
+        
+        alert.addAction(UIAlertAction(title: "🔄 更新所有订阅", style: .default) { _ in
+            self.updateAllSubscriptions()
+        })
+        
         alert.addAction(UIAlertAction(title: "🗑 删除节点", style: .destructive) { _ in
             self.showDeleteVLESSNode()
         })
@@ -1880,6 +1902,100 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
         }
         present(alert, animated: true)
+    }
+    
+    private func showSubscriptionManager() {
+        let subs = SubscriptionManager.shared.subscriptions
+        let alert = UIAlertController(title: "订阅管理", message: "当前\(subs.count)个订阅", preferredStyle: .actionSheet)
+        
+        for (i, sub) in subs.enumerated() {
+            alert.addAction(UIAlertAction(title: "\(sub.name) - \(sub.url.prefix(30))...", style: .default) { _ in
+                self.showSubscriptionOptions(index: i)
+            })
+        }
+        
+        alert.addAction(UIAlertAction(title: "➕ 添加订阅", style: .default) { _ in
+            self.showAddSubscription()
+        })
+        
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+    
+    private func showSubscriptionOptions(index: Int) {
+        let sub = SubscriptionManager.shared.subscriptions[index]
+        let alert = UIAlertController(title: sub.name, message: sub.url, preferredStyle: .actionSheet)
+        
+        alert.addAction(UIAlertAction(title: "立即更新", style: .default) { _ in
+            self.updateSubscription(at: index)
+        })
+        
+        alert.addAction(UIAlertAction(title: "删除订阅", style: .destructive) { _ in
+            SubscriptionManager.shared.removeSubscription(at: index)
+            self.showToast("订阅已删除")
+        })
+        
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+    
+    private func showAddSubscription() {
+        let alert = UIAlertController(title: "添加订阅", message: "输入订阅链接（支持小火箭/Shadowrocket格式）", preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.placeholder = "https://example.com/sub?token=xxx"
+            tf.autocapitalizationType = .none
+        }
+        alert.addTextField { tf in
+            tf.placeholder = "订阅名称（可选）"
+        }
+        alert.addAction(UIAlertAction(title: "添加并更新", style: .default) { _ in
+            if let url = alert.textFields?.first?.text, !url.isEmpty {
+                let name = alert.textFields?.last?.text ?? "订阅\(SubscriptionManager.shared.subscriptions.count + 1)"
+                SubscriptionManager.shared.addSubscription(url: url, name: name)
+                self.showToast("订阅已添加，正在更新...")
+                self.updateSubscription(at: SubscriptionManager.shared.subscriptions.count - 1)
+            }
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    
+    private func updateSubscription(at index: Int) {
+        let sub = SubscriptionManager.shared.subscriptions[index]
+        showToast("正在更新订阅...")
+        SubscriptionManager.shared.fetchNodes(from: sub.url) { nodes, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    self.showToast("更新失败: \(error.localizedDescription)")
+                    return
+                }
+                var newCount = 0
+                for node in nodes {
+                    if !VLESSNodeManager.shared.nodes.contains(where: { $0.uuid == node.uuid && $0.host == node.host }) {
+                        VLESSNodeManager.shared.addNode(node)
+                        newCount += 1
+                    }
+                }
+                self.showToast("更新完成，新增\(newCount)个节点")
+            }
+        }
+    }
+    
+    private func updateAllSubscriptions() {
+        showToast("正在更新所有订阅...")
+        SubscriptionManager.shared.updateAllSubscriptions { newCount in
+            DispatchQueue.main.async {
+                self.showToast("全部更新完成，新增\(newCount)个节点")
+            }
+        }
     }
     
     @objc private func edgeMenuShowSettings() {
