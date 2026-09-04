@@ -204,7 +204,7 @@ APPPROXY_TARGET /* AppProxyExtension */ = {
 				THIRDPARTY_ID /* ThirdPartyLoginManager.swift in Sources */,
 				SCENEDELEGATE_ID /* SceneDelegate.swift in Sources */,
 				VIEWCONTROLLER_ID /* ViewController.swift in Sources */,
-				VLESSCLIENT_BUILD /* VLESSClient.swift in Sources */,
+				VLESSCLIENT_MAIN_BUILD /* VLESSClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
