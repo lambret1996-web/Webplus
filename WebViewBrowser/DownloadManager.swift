@@ -331,7 +331,6 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
             DispatchQueue.main.async { self.onStatusChanged?(dtask) }
         }
     }
-}
     // MARK: - WKDownload 支持
     func startWKDownload(download: WKDownload, url: String, fileName: String, fileSize: Int64, mimeType: String) {
         let id = UUID().uuidString
@@ -423,6 +422,7 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
 
         }
     }
+}
 
 // MARK: - 格式化工具
 extension DownloadTask {
