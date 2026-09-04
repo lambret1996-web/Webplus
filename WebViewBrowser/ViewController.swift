@@ -73,7 +73,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         ("桌面版 Safari", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"),
         ("自定义 UA", "")
     ]
-    private let customUAKey = "customUserAgent" 
+    private let customUAKey = "customUserAgent"
+    // 历史记录存储
+    private let historyKey = "browserHistory"
+    private var browserHistory: [[String: String]] {
+        get { UserDefaults.standard.array(forKey: historyKey) as? [[String: String]] ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: historyKey) }
+    } 
     /// 自定义下拉刷新
     private var refreshViews: [UIView] = []
     private var refreshIndicators: [UIActivityIndicatorView] = []
@@ -934,7 +940,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             ])
         }
         // 合并内置黑名单 + 用户自定义域名
-        let allDomains = adDomains + customAdDomains
+        let allDomains = adDomains + customAdDomains + importedAdDomains
         for domain in allDomains {
             rules.append([
                 "trigger": [
@@ -1518,14 +1524,42 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     
     @objc private func edgeMenuShowHistory() {
         closeEdgeMenu()
-        // 显示历史记录（使用WKWebView的backForwardList）
-        let history = currentWebView.backForwardList
-        let alert = UIAlertController(title: "历史记录", message: "最近访问", preferredStyle: .actionSheet)
-        for item in history.backList.reversed().prefix(10) {
-            alert.addAction(UIAlertAction(title: item.title ?? item.url.absoluteString, style: .default) { _ in
-                self.currentWebView.go(to: item)
+        showBrowserHistory()
+    }
+    
+    private func showBrowserHistory() {
+        let history = browserHistory
+        let alert = UIAlertController(title: "历史记录（\(history.count)条）", message: "点击跳转，底部可清除", preferredStyle: .actionSheet)
+        if history.isEmpty {
+            alert.message = "暂无历史记录"
+        } else {
+            // 按时间倒序显示最近30条
+            for item in history.prefix(30) {
+                let title = item["title"] ?? item["url"] ?? ""
+                let url = item["url"] ?? ""
+                // 显示标题，副标题显示域名
+                let displayTitle = title.count > 40 ? String(title.prefix(40)) + "..." : title
+                alert.addAction(UIAlertAction(title: displayTitle, style: .default) { _ in
+                    if let targetURL = URL(string: url) {
+                        self.currentWebView.load(URLRequest(url: targetURL))
+                    }
+                })
+            }
+            // 清除历史记录
+            alert.addAction(UIAlertAction(title: "🗑 清除全部历史记录", style: .destructive) { _ in
+                self.clearBrowserHistory()
             })
         }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    
+    private func clearBrowserHistory() {
+        let alert = UIAlertController(title: "确认清除", message: "确定清除全部历史记录？此操作不可恢复", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "清除", style: .destructive) { _ in
+            UserDefaults.standard.removeObject(forKey: self.historyKey)
+            self.showToast("历史记录已清除")
+        })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         present(alert, animated: true)
     }
@@ -1817,6 +1851,20 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 self.showEditDomainAlert(index: i, original: domain, readable: readable)
             })
         }
+        // 圈X规则导入
+        alert.addAction(UIAlertAction(title: "📥 导入圈X/AdGuard规则", style: .default) { _ in
+            self.showQuantumultXImport()
+        })
+        // 管理导入的规则
+        if !self.importedAdDomains.isEmpty {
+            alert.addAction(UIAlertAction(title: "📋 已导入规则（\(self.importedAdDomains.count)条）", style: .default) { _ in
+                self.showImportedDomainsManager()
+            })
+        }
+        // 导出当前黑名单
+        alert.addAction(UIAlertAction(title: "📤 导出为圈X格式", style: .default) { _ in
+            self.exportAdRules()
+        })
         // 添加新域名
         alert.addAction(UIAlertAction(title: "➕ 添加新域名", style: .default) { _ in
             self.showAddDomainAlert()
@@ -1842,6 +1890,198 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
         present(alert, animated: true)
     }
+    // MARK: - 圈X/AdGuard规则导入
+    private func showQuantumultXImport() {
+        let alert = UIAlertController(title: "导入广告规则", message: "支持圈X、Shadowrocket、AdGuard域名黑名单格式", preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "🔗 从订阅链接导入", style: .default) { _ in
+            self.showSubscriptionImport()
+        })
+        alert.addAction(UIAlertAction(title: "📝 粘贴规则文本", style: .default) { _ in
+            self.showTextImport()
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = translateButton
+        }
+        present(alert, animated: true)
+    }
+    
+    private func showSubscriptionImport() {
+        let alert = UIAlertController(title: "订阅链接导入", message: "输入圈X/AdGuard规则订阅URL", preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.placeholder = "https://example.com/blocklist.txt"
+            tf.keyboardType = .URL
+            tf.autocapitalizationType = .none
+        }
+        alert.addAction(UIAlertAction(title: "开始导入", style: .default) { _ in
+            guard let urlStr = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespaces),
+                  let url = URL(string: urlStr) else {
+                self.showToast("无效链接")
+                return
+            }
+            self.showToast("正在下载规则...")
+            URLSession.shared.dataTask(with: url) { data, _, error in
+                DispatchQueue.main.async {
+                    if let data = data, let text = String(data: data, encoding: .utf8) {
+                        self.importRulesFromText(text)
+                    } else {
+                        self.showToast("下载失败：\(error?.localizedDescription ?? "未知")")
+                    }
+                }
+            }.resume()
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    
+    private func showTextImport() {
+        let alert = UIAlertController(title: "粘贴规则文本", message: "支持host、DOMAIN、DOMAIN-SET等格式，每行一条", preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.placeholder = "doubleclick.net\ngooglesyndication.com\n..."
+            tf.autocapitalizationType = .none
+        }
+        alert.addAction(UIAlertAction(title: "导入", style: .default) { _ in
+            if let text = alert.textFields?.first?.text {
+                self.importRulesFromText(text)
+            }
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    
+    /// 圈X规则解析器：提取域名，自动过滤不支持的指令
+    private func importRulesFromText(_ text: String) {
+        var extractedDomains: Set<String> = []
+        let lines = text.components(separatedBy: .newlines)
+        
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            // 跳过注释和空行
+            if trimmed.isEmpty || trimmed.hasPrefix("#") || trimmed.hasPrefix("!") || trimmed.hasPrefix("//") || trimmed.hasPrefix(";") {
+                continue
+            }
+            // 跳过浏览器不支持的指令
+            let unsupportedKeywords = ["rewrite", "script", "http-request", "http-response", 
+                                        "mitm", "hostname", "server", "proxy", "filter", 
+                                        "url 302", "url reject", "response-body", "request-body"]
+            let lowerLine = trimmed.lowercased()
+            if unsupportedKeywords.contains(where: { lowerLine.contains($0) }) {
+                continue
+            }
+            
+            var domain: String?
+            
+            // 格式1: host = example.com
+            if lowerLine.hasPrefix("host") {
+                if let eqRange = trimmed.range(of: "=") {
+                    domain = String(trimmed[eqRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+                }
+            }
+            // 格式2: DOMAIN,example.com
+            else if lowerLine.hasPrefix("domain,") || lowerLine.hasPrefix("domain-suffix,") || lowerLine.hasPrefix("domain-keyword,") {
+                let parts = trimmed.components(separatedBy: ",")
+                if parts.count >= 2 {
+                    domain = parts[1].trimmingCharacters(in: .whitespaces)
+                }
+            }
+            // 格式3: DOMAIN-SET,https://... (跳过，需要单独下载)
+            else if lowerLine.hasPrefix("domain-set") {
+                continue
+            }
+            // 格式4: 纯域名（包含点号，不含空格和特殊字符）
+            else if trimmed.contains(".") && !trimmed.contains(" ") && !trimmed.contains("://") {
+                // 过滤掉IP地址和路径
+                if trimmed.range(of: "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$", options: .regularExpression) == nil {
+                    domain = trimmed
+                }
+            }
+            // 格式5: 0.0.0.0 example.com (hosts文件格式)
+            else if trimmed.hasPrefix("0.0.0.0") || trimmed.hasPrefix("127.0.0.1") {
+                let parts = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+                if parts.count >= 2 {
+                    domain = parts[1]
+                }
+            }
+            
+            // 清理域名
+            if var d = domain {
+                d = d.lowercased()
+                d = d.replacingOccurrences(of: "https://", with: "")
+                d = d.replacingOccurrences(of: "http://", with: "")
+                if d.hasPrefix("www.") { d = String(d.dropFirst(4)) }
+                // 去掉路径
+                if let slashRange = d.range(of: "/") {
+                    d = String(d[..<slashRange.lowerBound])
+                }
+                // 去掉端口
+                if let colonRange = d.range(of: ":") {
+                    d = String(d[..<colonRange.lowerBound])
+                }
+                d = d.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+                // 验证是有效域名
+                if d.contains(".") && d.count > 3 {
+                    // 转义点号为正则格式
+                    let escaped = d.replacingOccurrences(of: ".", with: "\.")
+                    extractedDomains.insert(escaped)
+                }
+            }
+        }
+        
+        // 合并到已导入列表（去重）
+        var current = importedAdDomains
+        let beforeCount = current.count
+        for d in extractedDomains {
+            if !current.contains(d) {
+                current.append(d)
+            }
+        }
+        importedAdDomains = current
+        let addedCount = current.count - beforeCount
+        
+        // 重新编译规则
+        compileAdBlockRules()
+        showToast("导入完成：新增\(addedCount)条，共\(current.count)条导入规则")
+    }
+    
+    private func showImportedDomainsManager() {
+        let alert = UIAlertController(title: "已导入规则（\(importedAdDomains.count)条）", message: "点击删除单条，或清空全部导入规则", preferredStyle: .actionSheet)
+        for (i, domain) in importedAdDomains.enumerated() {
+            let readable = domain.replacingOccurrences(of: "\.", with: ".")
+            alert.addAction(UIAlertAction(title: "🗑 \(readable)", style: .destructive) { _ in
+                var list = self.importedAdDomains
+                list.remove(at: i)
+                self.importedAdDomains = list
+                self.compileAdBlockRules()
+                self.showToast("已删除")
+            })
+        }
+        alert.addAction(UIAlertAction(title: "🗑 清空全部导入规则", style: .destructive) { _ in
+            self.importedAdDomains.removeAll()
+            self.compileAdBlockRules()
+            self.showToast("已清空导入规则")
+        })
+        alert.addAction(UIAlertAction(title: "完成", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = translateButton
+        }
+        present(alert, animated: true)
+    }
+    
+    private func exportAdRules() {
+        var exportText = "# 轻浏览广告黑名单导出\n"
+        exportText += "# 手动添加（\(customAdDomains.count)条）：\n"
+        for d in customAdDomains {
+            exportText += d.replacingOccurrences(of: "\.", with: ".") + "\n"
+        }
+        exportText += "# 导入规则（\(importedAdDomains.count)条）：\n"
+        for d in importedAdDomains {
+            exportText += d.replacingOccurrences(of: "\.", with: ".") + "\n"
+        }
+        // 复制到剪贴板
+        UIPasteboard.general.string = exportText
+        showToast("已复制到剪贴板（共\(customAdDomains.count + importedAdDomains.count)条）")
+    }
+    
     /// 编辑/删除域名弹窗
     private func showEditDomainAlert(index: Int, original: String, readable: String) {
         let alert = UIAlertController(title: "编辑规则", message: "修改或删除该拦截规则", preferredStyle: .alert)
@@ -3138,6 +3378,25 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             progressView.isHidden = true
             updateURLField()
         }
+        // 记录历史记录（跨标签页、持久化、去重）
+        if let url = webView.url, !url.absoluteString.hasPrefix("about:") {
+            let title = webView.title ?? url.absoluteString
+            addToHistory(url: url.absoluteString, title: title)
+        }
+    }
+    
+    private func addToHistory(url: String, title: String) {
+        var history = browserHistory
+        // 去重：移除相同URL的旧记录
+        history.removeAll { $0["url"] == url }
+        // 插入到最前面（最新）
+        let entry = ["url": url, "title": title, "time": String(Date().timeIntervalSince1970)]
+        history.insert(entry, at: 0)
+        // 最多保留200条
+        if history.count > 200 {
+            history = Array(history.prefix(200))
+        }
+        browserHistory = history
     }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         if let index = webViews.firstIndex(of: webView) { endCustomRefresh(for: index) }
