@@ -3207,128 +3207,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
         return false
     }
-    // MARK: - 第三方登录跳转
-        let needConfirm = UserDefaults.standard.object(forKey: loginConfirmKey) as? Bool ?? true
-        if !needConfirm {
-            return
-        }
-        showLoginConfirmBar(url: url, platform: platform)
-    }
-        hideLoginConfirmBar()
-        pendingLoginURL = url
-        pendingLoginPlatform = platform
-        let bar = UIView()
-        bar.backgroundColor = .secondarySystemBackground
-        bar.layer.cornerRadius = 14
-        bar.layer.shadowColor = UIColor.black.cgColor
-        bar.layer.shadowOffset = CGSize(width: 0, height: -2)
-        bar.layer.shadowRadius = 10
-        bar.layer.shadowOpacity = 0.18
-        bar.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(bar)
-        loginConfirmBar = bar
-        let iconView = UIImageView(image: UIImage(systemName: platform.iconName))
-        iconView.tintColor = platform.color
-        iconView.contentMode = .scaleAspectFit
-        iconView.translatesAutoresizingMaskIntoConstraints = false
-        bar.addSubview(iconView)
-        let titleLabel = UILabel()
-        titleLabel.text = "即将跳转至\(platform.name)"
-        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        bar.addSubview(titleLabel)
-        let subtitleLabel = UILabel()
-        subtitleLabel.text = installed ? "检测到\(platform.name)App，将唤起App授权" : "未检测到App，将使用网页授权"
-        subtitleLabel.font = .systemFont(ofSize: 12)
-        subtitleLabel.textColor = .secondaryLabel
-        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        bar.addSubview(subtitleLabel)
-        let cancelBtn = UIButton(type: .system)
-        cancelBtn.setTitle("取消", for: .normal)
-        cancelBtn.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
-        cancelBtn.tintColor = .systemGray
-        cancelBtn.translatesAutoresizingMaskIntoConstraints = false
-        cancelBtn.addTarget(self, action: #selector(cancelLoginRedirect), for: .touchUpInside)
-        bar.addSubview(cancelBtn)
-        let continueBtn = UIButton(type: .system)
-        continueBtn.setTitle("继续跳转", for: .normal)
-        continueBtn.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
-        continueBtn.tintColor = .systemBlue
-        continueBtn.translatesAutoresizingMaskIntoConstraints = false
-        continueBtn.addTarget(self, action: #selector(confirmLoginRedirect), for: .touchUpInside)
-        bar.addSubview(continueBtn)
-        NSLayoutConstraint.activate([
-            bar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            bar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            bar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
-            bar.heightAnchor.constraint(equalToConstant: 68),
-            iconView.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 14),
-            iconView.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 32),
-            iconView.heightAnchor.constraint(equalToConstant: 32),
-            titleLabel.topAnchor.constraint(equalTo: bar.topAnchor, constant: 10),
-            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 10),
-            titleLabel.trailingAnchor.constraint(equalTo: cancelBtn.leadingAnchor, constant: -8),
-            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2),
-            subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            subtitleLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
-            cancelBtn.trailingAnchor.constraint(equalTo: continueBtn.leadingAnchor, constant: -14),
-            cancelBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-            cancelBtn.widthAnchor.constraint(equalToConstant: 50),
-            continueBtn.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -14),
-            continueBtn.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-            continueBtn.widthAnchor.constraint(equalToConstant: 70),
-        ])
-        bar.transform = CGAffineTransform(translationX: 0, y: 100)
-        UIView.animate(withDuration: 0.3) { bar.transform = .identity }
-    }
-    @objc private func cancelLoginRedirect() {
-        hideLoginConfirmBar()
-        showToast("已取消跳转")
-    }
-    @objc private func confirmLoginRedirect() {
-        guard let url = pendingLoginURL, let platform = pendingLoginPlatform else { return }
-        hideLoginConfirmBar()
-    }
-        isLoginRedirecting = true
-        showToast("正在跳转至\(platform.name)...")
-            DispatchQueue.main.async {
-                self?.isLoginRedirecting = false
-                if success {
-                    self?.showToast("已唤起\(platform.name)")
-                } else {
-                    if let appStoreURL = platform.appStoreURL,
-                       let storeURL = URL(string: appStoreURL) {
-                        let alert = UIAlertController(
-                            title: "未检测到\(platform.name)App",
-                            message: "是否前往App Store下载？或使用网页版授权",
-                            preferredStyle: .alert
-                        )
-                        alert.addAction(UIAlertAction(title: "网页授权", style: .default) { _ in
-                            self?.currentWebView.load(URLRequest(url: url))
-                        })
-                        alert.addAction(UIAlertAction(title: "下载App", style: .default) { _ in
-                            UIApplication.shared.open(storeURL)
-                        })
-                        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-                        self?.present(alert, animated: true)
-                    } else {
-                        self?.currentWebView.load(URLRequest(url: url))
-                    }
-                }
-            }
-        }
-    }
-    private func hideLoginConfirmBar() {
-        guard let bar = loginConfirmBar else { return }
-        UIView.animate(withDuration: 0.2, animations: {
-            bar.transform = CGAffineTransform(translationX: 0, y: 100)
-        }) { _ in bar.removeFromSuperview() }
-        loginConfirmBar = nil
-        pendingLoginURL = nil
-        pendingLoginPlatform = nil
-    }
-
     @objc private func handleEdgeMenuPan(_ gesture: UIPanGestureRecognizer) {
         let location = gesture.location(in: view)
         let translation = gesture.translation(in: view)
@@ -3779,6 +3657,52 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     deinit {
         for webView in webViews {
             webView.removeObserver(self, forKeyPath: #keyPath(WKWebView.estimatedProgress))
+    // MARK: - 图片长按菜单
+    @objc private func handleImageLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began, let webView = gesture.view as? WKWebView else { return }
+        let point = gesture.location(in: webView)
+        let js = """
+        (function() {
+            var el = document.elementFromPoint(\(point.x), \(point.y));
+            while (el && el.tagName !== 'IMG') { el = el.parentElement; }
+            return el ? el.src : '';
+        })();
+        """
+        webView.evaluateJavaScript(js) { [weak self] result, _ in
+            guard let self = self, let url = result as? String, !url.isEmpty else { return }
+            self.showImageMenu(url: url, in: webView)
+        }
+    }
+    
+    private func showImageMenu(url: String, in webView: WKWebView) {
+        let alert = UIAlertController(title: nil, message: url, preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "访问图片", style: .default) { _ in
+            if let index = self.webViews.firstIndex(of: webView) {
+                self.switchToTab(index: index)
+                webView.load(URLRequest(url: URL(string: url)!))
+            }
+        })
+        alert.addAction(UIAlertAction(title: "保存照片", style: .default) { _ in
+            self.saveImageToAlbum(url: url)
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+    
+    private func saveImageToAlbum(url: String) {
+        guard let imageURL = URL(string: url) else { return }
+        showToast("正在保存图片...")
+        URLSession.shared.dataTask(with: imageURL) { data, _, _ in
+            if let data = data, let image = UIImage(data: data) {
+                UIImageWriteToSavedPhotosAlbum(image, self, #selector(self.imageSaved(_:didFinishSavingWithError:contextInfo:)), nil)
+            } else {
+                DispatchQueue.main.async {
+                    self.showToast("图片保存失败")
+                }
         }
     }
 }
@@ -3833,52 +3757,6 @@ extension ViewController: UIGestureRecognizerDelegate {
     }
 
 
-    // MARK: - 图片长按菜单
-    @objc private func handleImageLongPress(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began, let webView = gesture.view as? WKWebView else { return }
-        let point = gesture.location(in: webView)
-        let js = """
-        (function() {
-            var el = document.elementFromPoint(\(point.x), \(point.y));
-            while (el && el.tagName !== 'IMG') { el = el.parentElement; }
-            return el ? el.src : '';
-        })();
-        """
-        webView.evaluateJavaScript(js) { [weak self] result, _ in
-            guard let self = self, let url = result as? String, !url.isEmpty else { return }
-            self.showImageMenu(url: url, in: webView)
-        }
-    }
-    
-    private func showImageMenu(url: String, in webView: WKWebView) {
-        let alert = UIAlertController(title: nil, message: url, preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: "访问图片", style: .default) { _ in
-            if let index = self.webViews.firstIndex(of: webView) {
-                self.switchToTab(index: index)
-                webView.load(URLRequest(url: URL(string: url)!))
-            }
-        })
-        alert.addAction(UIAlertAction(title: "保存照片", style: .default) { _ in
-            self.saveImageToAlbum(url: url)
-        })
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        if let popover = alert.popoverPresentationController {
-            popover.sourceView = view
-            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
-        }
-        present(alert, animated: true)
-    }
-    
-    private func saveImageToAlbum(url: String) {
-        guard let imageURL = URL(string: url) else { return }
-        showToast("正在保存图片...")
-        URLSession.shared.dataTask(with: imageURL) { data, _, _ in
-            if let data = data, let image = UIImage(data: data) {
-                UIImageWriteToSavedPhotosAlbum(image, self, #selector(self.imageSaved(_:didFinishSavingWithError:contextInfo:)), nil)
-            } else {
-                DispatchQueue.main.async {
-                    self.showToast("图片保存失败")
-                }
             }
         }.resume()
     }
@@ -3894,4 +3772,3 @@ extension ViewController: UIGestureRecognizerDelegate {
     }
 
 
-}
