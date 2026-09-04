@@ -116,21 +116,19 @@ jobs:
           # 使用printf避免echo添加换行符
           printf "%s" "$IOS_CERTIFICATE" | base64 -d > certificate.p12
           echo "证书文件大小: $(stat -f%z certificate.p12) bytes"
-          # 验证证书密码是否正确
-          if openssl pkcs12 -in certificate.p12 -info -noout -passin pass:"$IOS_CERTIFICATE_PWD" 2>&1 | grep -q "MAC:"; then
-            echo "证书密码验证成功"
+          # 使用openssl转换p12为pem，然后导入
+          openssl pkcs12 -in certificate.p12 -out certificate.pem -nodes -passin pass:"$IOS_CERTIFICATE_PWD" 2>/dev/null
+          if [ -f certificate.pem ] && [ -s certificate.pem ]; then
+            echo "openssl转换成功，导入证书和私钥"
+            security import certificate.pem -k build.keychain -T /usr/bin/codesign || echo "pem导入警告"
           else
-            echo "证书密码验证失败，尝试其他方式"
-            openssl pkcs12 -in certificate.p12 -info -noout -passin pass:"$IOS_CERTIFICATE_PWD" 2>&1 | head -5
+            echo "openssl转换失败，尝试直接导入p12"
+            security import certificate.p12 -k build.keychain -P "$IOS_CERTIFICATE_PWD" -T /usr/bin/codesign || echo "p12导入警告"
           fi
-          # 尝试多种方式导入证书
-          security import certificate.p12 -k build.keychain -P "$IOS_CERTIFICATE_PWD" -T /usr/bin/codesign || \
-          security import certificate.p12 -k build.keychain -P "$IOS_CERTIFICATE_PWD" || \
-          echo "证书导入警告，继续执行"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
           echo "=== 可用签名身份 ==="
           security find-identity -v -p codesigning build.keychain || true
-          rm -f certificate.p12
+          rm -f certificate.p12 certificate.pem
           echo "证书安装完成"
 
       - name: Install provisioning profile
