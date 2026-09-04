@@ -2733,7 +2733,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             group.leave()
         }
         group.notify(queue: .main) {
-            let summary = results.joined(separator: "\n
+            let summary = results.joined(separator: "\n")
             let resultAlert = UIAlertController(title: "权限申请结果", message: summary, preferredStyle: .alert)
             resultAlert.addAction(UIAlertAction(title: "确定", style: .default))
             self.present(resultAlert, animated: true)
@@ -3883,9 +3883,7 @@ extension ViewController: WKDownloadDelegate {
         DispatchQueue.main.async {
             self.showToast("下载失败：\(error.localizedDescription)")
         }
-}
     }
-
 
 }
 
