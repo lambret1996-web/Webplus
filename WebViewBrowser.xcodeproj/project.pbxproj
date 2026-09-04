@@ -121,7 +121,6 @@ APPPROXY_FRAMEWORKS /* Frameworks */ = {
 			buildRules = (
 			);
 			dependencies = (
-				APPPROXY_DEPENDENCY /* PBXTargetDependency */,
 			);
 			name = WebViewBrowser;
 			productName = WebViewBrowser;
@@ -177,15 +176,6 @@ APPPROXY_TARGET /* AppProxyExtension */ = {
 		};
 /* End PBXProject section */
 
-/* Begin PBXContainerItemProxy section */
-		APPPROXY_CONTAINERPROXY /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = PROJECT_ID /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = APPPROXY_TARGET;
-			remoteInfo = AppProxyExtension;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		EMBED_APP_EXTENSIONS /* Embed App Extensions */ = {
@@ -201,13 +191,6 @@ APPPROXY_TARGET /* AppProxyExtension */ = {
 		};
 /* End PBXCopyFilesBuildPhase section */
 
-/* Begin PBXTargetDependency section */
-		APPPROXY_DEPENDENCY /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = APPPROXY_TARGET /* AppProxyExtension */;
-			targetProxy = APPPROXY_CONTAINERPROXY /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 
 /* Begin PBXResourcesBuildPhase section */
