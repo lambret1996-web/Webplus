@@ -1309,37 +1309,74 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 button.trailingAnchor.constraint(equalTo: edgeMenuView.trailingAnchor),
                 button.heightAnchor.constraint(equalToConstant: 48)
             ])
-            // 排序模式下添加上下箭头
+            // 排序模式下添加三横线拖拽手柄
             if edgeMenuSortMode {
-                let upBtn = UIButton(type: .system)
-                upBtn.setImage(UIImage(systemName: "chevron.up"), for: .normal)
-                upBtn.tag = 200 + idx
-                upBtn.addTarget(self, action: #selector(moveMenuItemUp(_:)), for: .touchUpInside)
-                upBtn.translatesAutoresizingMaskIntoConstraints = false
-                button.addSubview(upBtn)
-                
-                let downBtn = UIButton(type: .system)
-                downBtn.setImage(UIImage(systemName: "chevron.down"), for: .normal)
-                downBtn.tag = 300 + idx
-                downBtn.addTarget(self, action: #selector(moveMenuItemDown(_:)), for: .touchUpInside)
-                downBtn.translatesAutoresizingMaskIntoConstraints = false
-                button.addSubview(downBtn)
-                
+                let handle = UIImageView(image: UIImage(systemName: "line.horizontal.3"))
+                handle.tintColor = .systemGray2
+                handle.tag = 400 + idx
+                handle.isUserInteractionEnabled = true
+                handle.translatesAutoresizingMaskIntoConstraints = false
+                button.addSubview(handle)
                 NSLayoutConstraint.activate([
-                    upBtn.centerYAnchor.constraint(equalTo: button.centerYAnchor),
-                    upBtn.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -40),
-                    upBtn.widthAnchor.constraint(equalToConstant: 20),
-                    upBtn.heightAnchor.constraint(equalToConstant: 20),
-                    downBtn.centerYAnchor.constraint(equalTo: button.centerYAnchor),
-                    downBtn.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -15),
-                    downBtn.widthAnchor.constraint(equalToConstant: 20),
-                    downBtn.heightAnchor.constraint(equalToConstant: 20)
+                    handle.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+                    handle.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -15),
+                    handle.widthAnchor.constraint(equalToConstant: 20),
+                    handle.heightAnchor.constraint(equalToConstant: 20)
                 ])
+                // 长按手柄开始拖拽
+                let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleMenuDrag(_:)))
+                longPress.minimumPressDuration = 0.2
+                handle.addGestureRecognizer(longPress)
             }
             previousView = button
         }
     }
     
+    @objc private func handleMenuDrag(_ gesture: UILongPressGestureRecognizer) {
+        guard let handle = gesture.view, let button = handle.superview else { return }
+        let idx = button.tag - 100
+        let location = gesture.location(in: edgeMenuView)
+        
+        switch gesture.state {
+        case .began:
+            draggingIndex = idx
+            draggingStartY = location.y
+            button.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.15)
+        case .changed:
+            guard let dragIdx = draggingIndex else { return }
+            let itemHeight: CGFloat = 48
+            let startY = edgeMenuView.safeAreaLayoutGuide.layoutFrame.minY + 60
+            let relativeY = location.y - startY
+            var targetIdx = Int(relativeY / itemHeight)
+            targetIdx = max(0, min(edgeMenuFunctions.count - 1, targetIdx))
+            
+            if targetIdx != dragIdx {
+                edgeMenuFunctions.swapAt(dragIdx, targetIdx)
+                draggingIndex = targetIdx
+                if let titleLabel = edgeMenuView.subviews.first(where: { ($0 as? UILabel)?.text == "功能菜单" }) as? UILabel {
+                    renderEdgeMenuButtons(after: titleLabel)
+                }
+            }
+        case .ended, .cancelled:
+            draggingIndex = nil
+            button.backgroundColor = .clear
+            saveMenuOrder()
+        default:
+            break
+        }
+    }
+    
+    private func saveMenuOrder() {
+        let defaultTitles = ["增加书签", "书签列表", "历史记录", "下载管理", "全局图片拦截", "UA 切换", "广告黑名单", "清空站点缓存", "一键清空缓存", "设置"]
+        var order: [Int] = []
+        for item in edgeMenuFunctions {
+            if let idx = defaultTitles.firstIndex(of: item.title) {
+                order.append(idx)
+            }
+        }
+        UserDefaults.standard.set(order, forKey: edgeMenuOrderKey)
+    }
+
     @objc private func toggleEdgeMenuSortMode() {
         edgeMenuSortMode.toggle()
         if let sortBtn = edgeMenuView.viewWithTag(999) as? UIButton {
