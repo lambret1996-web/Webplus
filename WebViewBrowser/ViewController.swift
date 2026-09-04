@@ -61,6 +61,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // 菜单功能项排序
     private var edgeMenuFunctions: [(icon: String, title: String, action: Selector)] = []
     private var edgeMenuSortMode = false
+    private var draggingIndex: Int?
+    private var draggingStartY: CGFloat = 0
     private let edgeMenuOrderKey = "edgeMenuOrder"
     // UA预设
     private let uaPresetsExtended = [
@@ -1201,7 +1203,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // MARK: - 右边缘下滑功能菜单
     private func setupEdgeMenu() {
         // 菜单宽度：40%
-        let menuWidth = view.bounds.width * 0.40
+        let menuWidth = view.bounds.width * 0.50
         // 遮罩层：点击菜单外任意区域收回菜单
         edgeMenuOverlay = UIButton(type: .system)
         edgeMenuOverlay.backgroundColor = UIColor.black.withAlphaComponent(0.10)
@@ -1362,23 +1364,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
     }
     
-    @objc private func moveMenuItemUp(_ sender: UIButton) {
-        let idx = sender.tag - 200
-        guard idx > 0 else { return }
-        edgeMenuFunctions.swapAt(idx, idx - 1)
-        if let titleLabel = edgeMenuView.subviews.first(where: { ($0 as? UILabel)?.text == "功能菜单" }) as? UILabel {
-            renderEdgeMenuButtons(after: titleLabel)
-        }
-    }
-    
-    @objc private func moveMenuItemDown(_ sender: UIButton) {
-        let idx = sender.tag - 300
-        guard idx < edgeMenuFunctions.count - 1 else { return }
-        edgeMenuFunctions.swapAt(idx, idx + 1)
-        if let titleLabel = edgeMenuView.subviews.first(where: { ($0 as? UILabel)?.text == "功能菜单" }) as? UILabel {
-            renderEdgeMenuButtons(after: titleLabel)
-        }
-    }
+
 
     private func createMenuButton(icon: String, title: String, action: Selector) -> UIButton {
         let button = UIButton(type: .system)
@@ -1597,14 +1583,14 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         handleTranslateLongPress(UILongPressGestureRecognizer())
     }
     
-    private func setEdgeMenu(open: Bool) {
+    private func setEdgeMenu(open: Bool, duration: TimeInterval = 0.2) {
         edgeMenuIsOpen = open
-        let menuWidth = view.bounds.width * 0.40
+        let menuWidth = view.bounds.width * 0.50
         edgeMenuLeadingConstraint.constant = open ? -menuWidth : 0
         if open {
             edgeMenuOverlay.isHidden = false
         }
-        UIView.animate(withDuration: open ? 0.2 : 0.2, delay: 0,
+        UIView.animate(withDuration: duration, delay: 0,
                        usingSpringWithDamping: open ? 0.5 : 1.0,
                        initialSpringVelocity: open ? 0.8 : 0,
                        options: .curveEaseInOut) {
@@ -2724,7 +2710,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         let location = gesture.location(in: view)
         let translation = gesture.translation(in: view)
         let velocity = gesture.velocity(in: view)
-        let menuWidth = view.bounds.width * 0.40
+        let menuWidth = view.bounds.width * 0.50
         // 右边缘检测区域
         let edgeThreshold: CGFloat = 60
         // 触发阈值：水平偏移15pt + 垂直下滑10pt 同时满足
@@ -2732,6 +2718,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         let triggerThreshold: CGFloat = 10
         // 左滑收起阈值
         let closeThreshold: CGFloat = 45
+        // 快速滑动速度阈值
         let fastVelocity: CGFloat = 400
 
         switch gesture.state {
@@ -2748,6 +2735,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         case .changed:
             let dx = edgeMenuPanStart.x - location.x // 向左为正
             let dy = location.y - edgeMenuPanStart.y // 向下为正
+            let speed = sqrt(velocity.x * velocity.x + velocity.y * velocity.y)
 
             if edgeMenuIsOpen {
                 // 菜单已打开：左滑超过阈值立即收起
@@ -2758,10 +2746,16 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                     gesture.isEnabled = true
                 }
             } else {
-                // 确认右边缘下滑意图后立即快速弹出，不等用户画完手势
-                if !edgeMenuDidTrigger && dx >= horizontalThreshold && dy >= triggerThreshold {
+                // 快速轻扫（速度≥400pt/s）：短距离直接呼出
+                let fastSwipe = speed >= fastVelocity && dy > 5
+                // 慢速滑动：需要达到位移阈值
+                let slowTrigger = dx >= horizontalThreshold && dy >= triggerThreshold
+                
+                if !edgeMenuDidTrigger && (fastSwipe || slowTrigger) {
                     edgeMenuDidTrigger = true
-                    setEdgeMenu(open: true)
+                    // 弹出速度跟随手指速度：越快动画越短
+                    let animDuration = max(0.1, 0.3 - speed / 3000)
+                    setEdgeMenu(open: true, duration: animDuration)
                     // 结束当前手势，由动画接管弹出
                     gesture.isEnabled = false
                     gesture.isEnabled = true
@@ -2774,25 +2768,48 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
 
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
         guard gesture.view === currentWebView else { return }
-        let location = gesture.location(in: view)
         let translation = gesture.translation(in: view)
+        let velocity = gesture.velocity(in: view)
+        let screenWidth = view.bounds.width
+        let switchThreshold = screenWidth * 0.55 // 拖拽55%触发标签切换
+        
         switch gesture.state {
         case .began:
-            gestureStartPoint = location
+            gestureStartPoint = gesture.location(in: view)
             gestureStartDate = Date()
-        case .ended:
-            let elapsed = Date().timeIntervalSince(gestureStartDate)
-            let horizontalDistance = translation.x
-            let verticalDistance = abs(translation.y)
-            guard elapsed <= gestureMaxDuration,
-                  abs(horizontalDistance) > gestureThreshold,
-                  abs(horizontalDistance) > verticalDistance * 1.5 else {
-                return
+        case .changed:
+            // 跟手：页面跟随手指水平平移（仅水平方向，垂直方向不影响）
+            let dx = translation.x
+            if abs(dx) > abs(translation.y) * 1.2 {
+                // 限制平移范围，最多移动屏幕宽度的80%
+                let limitedDx = max(-screenWidth * 0.8, min(screenWidth * 0.8, dx))
+                currentWebView.transform = CGAffineTransform(translationX: limitedDx, y: 0)
             }
-            if horizontalDistance > 0 {
-                if currentWebView.canGoBack { currentWebView.goBack() }
-            } else {
-                if currentWebView.canGoForward { currentWebView.goForward() }
+        case .ended:
+            let dx = translation.x
+            let elapsed = Date().timeIntervalSince(gestureStartDate)
+            // 快速滑动（速度≥500pt/s）直接切换，无视距离
+            let fastSwipe = elapsed <= 0.3 && abs(velocity.x) >= 500
+            // 慢速滑动需要达到55%阈值
+            let enoughDistance = abs(dx) >= switchThreshold
+            
+            // 回弹动画
+            UIView.animate(withDuration: 0.25, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.5, options: .curveEaseOut) {
+                self.currentWebView.transform = .identity
+            }
+            
+            if fastSwipe || enoughDistance {
+                if dx < 0 {
+                    // 左滑→下一个标签
+                    self.switchToTab(index: (self.activeIndex + 1) % self.webViews.count)
+                } else {
+                    // 右滑→上一个标签
+                    self.switchToTab(index: (self.activeIndex - 1 + self.webViews.count) % self.webViews.count)
+                }
+            }
+        case .cancelled:
+            UIView.animate(withDuration: 0.25) {
+                self.currentWebView.transform = .identity
             }
         default:
             break
