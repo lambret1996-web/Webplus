@@ -897,21 +897,18 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             }
             return
         }
+        // 全局图片拦截（所有网站的所有图片）
+        if UserDefaults.standard.bool(forKey: globalImageBlockKey) {
+            rules.append([
+                "trigger": [
+                    "resource-type": ["image"]
+                ],
+                "action": ["type": "block"]
+            ])
+        }
         // 合并内置黑名单 + 用户自定义域名
         let allDomains = adDomains + customAdDomains
         for domain in allDomains {
-            // 图片拦截规则：使用if-domain，在指定网站拦截所有图片（含第三方）
-            if isImageBlockRule(domain), let host = imageBlockDomain(from: domain) {
-                rules.append([
-                    "trigger": [
-                        "resource-type": ["image"],
-                        "if-domain": [host]
-                    ],
-                    "action": ["type": "block"]
-                ])
-                continue
-            }
-            // 普通域名规则
             rules.append([
                 "trigger": [
                     "url-filter": domain,
@@ -1249,15 +1246,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             UserDefaults.standard.set(!current, forKey: self.loginConfirmKey)
             self.showToast(!current ? "登录跳转确认已开启" : "已开启静默跳转")
         })
-        // 一键拦截当前网站图片
-        if let host = self.currentWebView.url?.host {
-            let imageRule = self.imageBlockRule(for: host)
-            let isBlocking = self.customAdDomains.contains(imageRule)
-            let imageTitle = isBlocking ? "🖼 拦截本站图片：已开启（点击关闭）" : "🖼 一键拦截本站所有图片"
-            alert.addAction(UIAlertAction(title: imageTitle, style: .default) { _ in
-                self.toggleImageBlock(for: host)
-            })
-        }
+        // 全局图片拦截开关
+        let globalImageBlock = UserDefaults.standard.bool(forKey: self.globalImageBlockKey)
+        let globalImageTitle = globalImageBlock ? "🖼 全局图片拦截：已开启（点击关闭）" : "🖼 全局拦截所有图片"
+        alert.addAction(UIAlertAction(title: globalImageTitle, style: .default) { _ in
+            self.toggleGlobalImageBlock()
+        })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         if let popover = alert.popoverPresentationController {
             popover.sourceView = translateButton
@@ -1276,31 +1270,16 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private func manageCustomAdDomains() {
         showCustomAdManager()
     }
-    // MARK: - 一键拦截当前网站所有图片（第一方+第三方）
-    private let imageBlockPrefix = "__image_block__"
-    private func imageBlockRule(for host: String) -> String {
-        return imageBlockPrefix + host
-    }
-    private func isImageBlockRule(_ rule: String) -> Bool {
-        return rule.hasPrefix(imageBlockPrefix)
-    }
-    private func imageBlockDomain(from rule: String) -> String? {
-        guard rule.hasPrefix(imageBlockPrefix) else { return nil }
-        return String(rule.dropFirst(imageBlockPrefix.count))
-    }
-    private func toggleImageBlock(for host: String) {
-        let rule = imageBlockRule(for: host)
-        if let index = customAdDomains.firstIndex(of: rule) {
-            customAdDomains.remove(at: index)
-            UserDefaults.standard.set(customAdDomains, forKey: customAdDomainsKey)
-            compileAdBlockRules()
-            showToast("已关闭本站图片拦截")
-        } else {
-            customAdDomains.append(rule)
-            UserDefaults.standard.set(customAdDomains, forKey: customAdDomainsKey)
-            compileAdBlockRules()
-            showToast("已开启全站图片拦截（含第三方广告图），刷新后生效")
+    // MARK: - 全局图片拦截
+    private func toggleGlobalImageBlock() {
+        let current = UserDefaults.standard.bool(forKey: globalImageBlockKey)
+        UserDefaults.standard.set(!current, forKey: globalImageBlockKey)
+        compileAdBlockRules()
+        if !current {
+            showToast("已开启全局图片拦截，刷新后生效")
             currentWebView.reload()
+        } else {
+            showToast("已关闭全局图片拦截")
         }
     }
     /// 统一的自定义黑名单管理界面：列表+添加+删除+清空
@@ -1410,22 +1389,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     /// 编辑已有域名规则
     private func showEditDomainAlert(at index: Int, original: String, readable: String) {
-        // 图片拦截规则不允许编辑，只允许删除
-        if isImageBlockRule(original) {
-            let alert = UIAlertController(title: "全站图片拦截", message: "\(readable)\n\n此规则为一键生成，仅支持删除", preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "删除此规则", style: .destructive) { _ in
-                self.customAdDomains.remove(at: index)
-                UserDefaults.standard.set(self.customAdDomains, forKey: self.customAdDomainsKey)
-                self.compileAdBlockRules()
-                self.showToast("已删除图片拦截规则")
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.showCustomAdManager() }
-            })
-            alert.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in
-                self.showCustomAdManager()
-            })
-            present(alert, animated: true)
-            return
-        }
         let alert = UIAlertController(title: "编辑规则", message: "修改后将替换原规则", preferredStyle: .alert)
         alert.addTextField { tf in
             tf.text = readable
