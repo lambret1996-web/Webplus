@@ -171,6 +171,7 @@ APPPROXY_TARGET /* AppProxyExtension */ = {
 			projectRoot = "";
 			targets = (
 				NATIVETARGET_ID /* WebViewBrowser */,
+				APPPROXY_TARGET /* AppProxyExtension */,
 			);
 		};
 /* End PBXProject section */
