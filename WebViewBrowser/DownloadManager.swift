@@ -332,21 +332,6 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
         }
     }
 }
-
-// MARK: - 格式化工具
-extension DownloadTask {
-    var sizeText: String {
-        let bytes = fileSize > 0 ? fileSize : downloadedSize
-        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
-    }
-    var downloadedText: String {
-        return ByteCountFormatter.string(fromByteCount: downloadedSize, countStyle: .file)
-    }
-    var timeText: String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "MM-dd HH:mm"
-        return fmt.string(from: finishTime ?? startTime)
-    }
     // MARK: - WKDownload 支持
     func startWKDownload(download: WKDownload, url: String, fileName: String, fileSize: Int64, mimeType: String) {
         let id = UUID().uuidString
@@ -435,6 +420,21 @@ extension DownloadTask {
             DispatchQueue.main.async {
                 self.onStatusChanged?(task)
             }
+
+// MARK: - 格式化工具
+extension DownloadTask {
+    var sizeText: String {
+        let bytes = fileSize > 0 ? fileSize : downloadedSize
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+    var downloadedText: String {
+        return ByteCountFormatter.string(fromByteCount: downloadedSize, countStyle: .file)
+    }
+    var timeText: String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MM-dd HH:mm"
+        return fmt.string(from: finishTime ?? startTime)
+    }
         }
     }
 
