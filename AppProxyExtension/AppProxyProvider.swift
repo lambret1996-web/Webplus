@@ -39,7 +39,12 @@ class AppProxyProvider: NEAppProxyProvider {
     override func handleNewFlow(_ flow: NEAppProxyFlow) -> Bool {
         guard let tcpFlow = flow as? NEAppProxyTCPFlow else { return false }
         
-        let remoteHost = flow.remoteHostname ?? ""
+        let remoteHost: String
+        if #available(iOS 14.2, *) {
+            remoteHost = flow.remoteHostname ?? ""
+        } else {
+            remoteHost = ""
+        }
         Stats.totalRequests += 1
         saveStats()
         
