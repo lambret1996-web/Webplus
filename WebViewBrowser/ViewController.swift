@@ -1662,6 +1662,121 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         showToast("已清空全部缓存")
     }
     
+    @objc private func edgeMenuShowProxy() {
+        closeEdgeMenu()
+        showProxySettings()
+    }
+    
+    private func showProxySettings() {
+        let alert = UIAlertController(title: "高级代理 (App-Proxy)", message: "内置本地代理，HTTP请求重定向+广告域名拦截+请求头修改", preferredStyle: .actionSheet)
+        
+        NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, _ in
+            let isRunning = managers?.contains(where: { $0.localizedDescription == "LightBrowserProxy" && $0.connection.status == .connected }) ?? false
+            let defaults = UserDefaults(suiteName: "group.com.lambret.webplus")
+            let total = defaults?.integer(forKey: "totalRequests") ?? 0
+            let blocked = defaults?.integer(forKey: "blocked") ?? 0
+            let redirected = defaults?.integer(forKey: "redirected") ?? 0
+            alert.message = "状态: \(isRunning ? "运行中" : "未启动")\n请求: \(total) 拦截: \(blocked) 重定向: \(redirected)"
+        }
+        
+        alert.addAction(UIAlertAction(title: "开启代理", style: .default) { _ in
+            self.startBrowserProxy()
+        })
+        alert.addAction(UIAlertAction(title: "关闭代理", style: .default) { _ in
+            self.stopBrowserProxy()
+        })
+        alert.addAction(UIAlertAction(title: "设置排除域名", style: .default) { _ in
+            self.showProxyExcludeSettings()
+        })
+        alert.addAction(UIAlertAction(title: "删除VPN配置", style: .destructive) { _ in
+            self.removeProxyConfig()
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+    
+    private func showProxyExcludeSettings() {
+        let alert = UIAlertController(title: "排除域名", message: "这些域名不走代理，逗号分隔", preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.text = self.proxyExcludeDomains
+            tf.placeholder = "github.com,cloudflare.com"
+            tf.autocapitalizationType = .none
+        }
+        alert.addAction(UIAlertAction(title: "保存", style: .default) { _ in
+            if let text = alert.textFields?.first?.text {
+                self.proxyExcludeDomains = text
+                self.showToast("排除域名已保存")
+            }
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    
+    private func startBrowserProxy() {
+        showToast("正在启动代理...")
+        NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
+            if let error = error {
+                self?.showToast("启动失败: \(error.localizedDescription)")
+                return
+            }
+            let manager: NETunnelProviderManager
+            if let existing = managers?.first(where: { $0.localizedDescription == "LightBrowserProxy" }) {
+                manager = existing
+            } else {
+                manager = NETunnelProviderManager()
+                manager.localizedDescription = "LightBrowserProxy"
+            }
+            let proto = NETunnelProviderProtocol()
+            proto.providerBundleIdentifier = "com.lambret.webplus.AppProxyExtension"
+            proto.serverAddress = "127.0.0.1"
+            proto.providerConfiguration = [
+                "excludeDomains": self?.proxyExcludeDomains ?? "",
+                "rules": "browser-proxy"
+            ]
+            manager.protocolConfiguration = proto
+            manager.isEnabled = true
+            manager.saveToPreferences { error in
+                if let error = error {
+                    self?.showToast("保存失败: \(error.localizedDescription)")
+                    return
+                }
+                manager.loadFromPreferences { _ in
+                    do {
+                        try manager.connection.startVPNTunnel()
+                        self?.showToast("代理已启动")
+                    } catch {
+                        self?.showToast("启动失败: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+    
+    private func stopBrowserProxy() {
+        NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, _ in
+            if let manager = managers?.first(where: { $0.localizedDescription == "LightBrowserProxy" }) {
+                manager.connection.stopVPNTunnel()
+                self?.showToast("代理已停止")
+            }
+        }
+    }
+    
+    private func removeProxyConfig() {
+        NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, _ in
+            for manager in managers ?? [] {
+                if manager.localizedDescription == "LightBrowserProxy" {
+                    manager.removeFromPreferences { _ in
+                        self?.showToast("VPN配置已删除")
+                    }
+                }
+            }
+        }
+    }
+    
     @objc private func edgeMenuShowSettings() {
         closeEdgeMenu()
         // 显示设置菜单（复用翻译键长按菜单）
