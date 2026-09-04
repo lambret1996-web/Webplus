@@ -1306,24 +1306,24 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             preferredStyle: .actionSheet
         )
         alert.addAction(UIAlertAction(title: "🗑 清理全部缓存", style: .destructive) { _ in
-            fourLevelCache.removeAllCachedResponses()
+            self.fourLevelCache.removeAllCachedResponses()
             self.showToast("已清理全部四级缓存")
         })
         alert.addAction(UIAlertAction(title: "⚡ 仅清理内存缓存", style: .default) { _ in
-            fourLevelCache.clearMemoryCache()
+            self.fourLevelCache.clearMemoryCache()
             self.showToast("已清理一级内存缓存")
         })
         alert.addAction(UIAlertAction(title: "📄 仅清理动态页面缓存", style: .default) { _ in
-            fourLevelCache.clearTempCache()
+            self.fourLevelCache.clearTempCache()
             self.showToast("已清理二级瞬时缓存")
         })
         alert.addAction(UIAlertAction(title: "🖼 仅清理静态资源缓存", style: .default) { _ in
-            fourLevelCache.clearStaticCache()
+            self.fourLevelCache.clearStaticCache()
             self.showToast("已清理三级持久缓存")
         })
         if let host = currentWebView.url?.host {
             alert.addAction(UIAlertAction(title: "📍 清理当前站点缓存（\(host)）", style: .default) { _ in
-                fourLevelCache.clearCacheForSite(host)
+                self.fourLevelCache.clearCacheForSite(host)
                 self.showToast("已清理 \(host) 缓存")
                 self.currentWebView.reload()
             })
