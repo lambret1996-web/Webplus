@@ -113,8 +113,17 @@ jobs:
           security default-keychain -s build.keychain
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
           security set-keychain-settings -t 3600 -l build.keychain
-          echo "$IOS_CERTIFICATE" | base64 -d > certificate.p12
-          security import certificate.p12 -k build.keychain -P "$IOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+          # 使用printf避免echo添加换行符
+          printf "%s" "$IOS_CERTIFICATE" | base64 -d > certificate.p12
+          echo "证书文件大小: $(stat -f%z certificate.p12) bytes"
+          # 验证证书密码是否正确
+          if openssl pkcs12 -in certificate.p12 -info -noout -passin pass:"$IOS_CERTIFICATE_PWD" 2>&1 | grep -q "MAC:"; then
+            echo "证书密码验证成功"
+          else
+            echo "证书密码验证失败，尝试其他方式"
+            openssl pkcs12 -in certificate.p12 -info -noout -passin pass:"$IOS_CERTIFICATE_PWD" 2>&1 | head -5
+          fi
+          security import certificate.p12 -k build.keychain -P "$IOS_CERTIFICATE_PWD" -T /usr/bin/codesign -x
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
           rm -f certificate.p12
           echo "证书安装完成"
@@ -125,7 +134,9 @@ jobs:
           IOS_PROVISION_PROFILE: ${{ secrets.IOS_PROVISION_PROFILE }}
         run: |
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          echo "$IOS_PROVISION_PROFILE" | base64 -d > profile.mobileprovision
+          # 使用printf避免echo添加换行符
+          printf "%s" "$IOS_PROVISION_PROFILE" | base64 -d > profile.mobileprovision
+          echo "描述文件大小: $(stat -f%z profile.mobileprovision) bytes"
           UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< "$(security cms -D -i profile.mobileprovision)")
           cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$UUID.mobileprovision
           rm -f profile.mobileprovision
