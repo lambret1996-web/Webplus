@@ -13,7 +13,7 @@ import CoreMotion
 import Contacts
 import EventKit
 import AppTrackingTransparency
-class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UIScrollViewDelegate, UITextFieldDelegate {
+class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, UIScrollViewDelegate, UITextFieldDelegate {
     // MARK: - 配置项
     private var windowTitles: [String] = ["GitHub", "CF", "Google", "YouTube"]
     private var windowURLs: [String] = [
@@ -3830,7 +3830,7 @@ extension ViewController: UIGestureRecognizerDelegate {
         }
     }
     
-    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+    @objc func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
         let fileManager = FileManager.default
         let docsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let downloadsDir = docsDir.appendingPathComponent("Downloads", isDirectory: true)
@@ -3855,10 +3855,12 @@ extension ViewController: UIGestureRecognizerDelegate {
             counter += 1
         }
         print("[Download] 目标路径: \(destURL.path)")
+        // 保存目标路径，供下载完成后使用
+        DownloadManager.shared.setDestinationURL(destURL, for: download)
         completionHandler(destURL)
     }
     
-    func downloadDidFinish(_ download: WKDownload) {
+    @objc func downloadDidFinish(_ download: WKDownload) {
         print("[Download] 下载完成")
         DownloadManager.shared.completeWKDownload(download: download)
         DispatchQueue.main.async {
@@ -3866,7 +3868,7 @@ extension ViewController: UIGestureRecognizerDelegate {
         }
     }
     
-    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+    @objc func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         print("[Download] 下载失败: \(error.localizedDescription)")
         DownloadManager.shared.failWKDownload(download: download, error: error)
         DispatchQueue.main.async {

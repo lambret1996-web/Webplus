@@ -73,6 +73,7 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
     private var urlSessionTasks: [String: URLSessionDownloadTask] = [:]
     private var wkDownloads: [String: WKDownload] = [:]
     private var wkProgressObservers: [String: NSKeyValueObservation] = [:]
+    private var wkDestinationURLs: [String: URL] = [:]
     private let taskQueue = DispatchQueue(label: "download.manager.queue")
     private let maxConcurrent = 3
     
@@ -332,6 +333,14 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
         }
     }
     // MARK: - WKDownload 支持
+    func setDestinationURL(_ url: URL, for download: WKDownload) {
+        taskQueue.sync {
+            if let id = wkDownloads.first(where: { $0.value === download })?.key {
+                wkDestinationURLs[id] = url
+            }
+        }
+    }
+    
     func startWKDownload(download: WKDownload, url: String, fileName: String, fileSize: Int64, mimeType: String) {
         let id = UUID().uuidString
         taskQueue.sync {
@@ -385,7 +394,7 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
             task.finishTime = Date()
             task.downloadedSize = task.fileSize
             // 获取保存路径
-            if let destURL = download.fileURL {
+            if let destURL = wkDestinationURLs[id] {
                 task.localPath = destURL.path
                 // 更新实际文件大小
                 if let attrs = try? FileManager.default.attributesOfItem(atPath: destURL.path),
@@ -393,6 +402,7 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
                     task.fileSize = size
                     task.downloadedSize = size
                 }
+                wkDestinationURLs.removeValue(forKey: id)
             }
             tasks[id] = task
             persist()
