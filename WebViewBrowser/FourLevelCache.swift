@@ -15,11 +15,11 @@ class FourLevelCache: URLCache {
     private let staticCacheDir: URL
     
     // MARK: - 时效配置
-    private let tempCacheTTL: TimeInterval = 30 * 60      // 二级瞬时缓存：30分钟
-    private let staticCacheTTL: TimeInterval = 7 * 24 * 3600 // 三级持久缓存：7天
-    private let largeFileTTL: TimeInterval = 48 * 3600     // 大文件：48小时
-    private let memoryCostLimit = 80 * 1024 * 1024         // 一级内存：80MB
-    private let maxCacheSize = 200 * 1024 * 1024           // 总缓存上限：200MB
+    private let tempCacheTTL: TimeInterval = 30 * 60
+    private let staticCacheTTL: TimeInterval = 7 * 24 * 3600
+    private let largeFileTTL: TimeInterval = 48 * 3600
+    private let memoryCostLimit = 80 * 1024 * 1024
+    private let maxCacheSize = 200 * 1024 * 1024
     
     // MARK: - 静态资源扩展名
     private let staticExtensions: Set<String> = [
@@ -28,10 +28,7 @@ class FourLevelCache: URLCache {
         "mp4", "webm", "mp3", "wav", "ogg"
     ]
     
-    // MARK: - 单例
-    static let shared = FourLevelCache()
-    
-    private override init(memoryCapacity: Int, diskCapacity: Int, diskPath path: String?) {
+    override init(memoryCapacity: Int, diskCapacity: Int, diskPath path: String?) {
         let cacheBase = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("BrowserCache", isDirectory: true)
         tempCacheDir = cacheBase.appendingPathComponent("TempWebCache", isDirectory: true)
@@ -42,10 +39,6 @@ class FourLevelCache: URLCache {
         memoryCache.totalCostLimit = memoryCostLimit
         createCacheDirectories()
         cleanupExpiredCache()
-    }
-    
-    convenience init() {
-        self.init(memoryCapacity: 80 * 1024 * 1024, diskCapacity: 200 * 1024 * 1024, diskPath: "FourLevelCache")
     }
     
     // MARK: - 目录创建
@@ -71,7 +64,7 @@ class FourLevelCache: URLCache {
     }
     
     private func isLargeFile(_ response: URLResponse) -> Bool {
-        return response.expectedContentLength > 5 * 1024 * 1024 // 大于5MB
+        return response.expectedContentLength > 5 * 1024 * 1024
     }
     
     // MARK: - 一级：内存缓存读取
@@ -85,10 +78,9 @@ class FourLevelCache: URLCache {
         guard let key = cacheKey(for: request) else { return nil }
         let fileURL = tempCacheDir.appendingPathComponent(key)
         guard let data = try? Data(contentsOf: fileURL),
-              let response = NSKeyedUnarchiver.unarchiveObject(with: data) as? CachedURLResponse else {
+              let response = try? NSKeyedUnarchiver.unarchivedObject(ofClass: CachedURLResponse.self, from: data) else {
             return nil
         }
-        // 检查过期
         if let modDate = try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date,
            Date().timeIntervalSince(modDate) > tempCacheTTL {
             try? FileManager.default.removeItem(at: fileURL)
@@ -102,10 +94,9 @@ class FourLevelCache: URLCache {
         guard let key = cacheKey(for: request) else { return nil }
         let fileURL = staticCacheDir.appendingPathComponent(key)
         guard let data = try? Data(contentsOf: fileURL),
-              let response = NSKeyedUnarchiver.unarchiveObject(with: data) as? CachedURLResponse else {
+              let response = try? NSKeyedUnarchiver.unarchivedObject(ofClass: CachedURLResponse.self, from: data) else {
             return nil
         }
-        // 检查过期
         let ttl = isLargeFile(response.response) ? largeFileTTL : staticCacheTTL
         if let modDate = try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date,
            Date().timeIntervalSince(modDate) > ttl {
@@ -118,14 +109,13 @@ class FourLevelCache: URLCache {
     // MARK: - 写入缓存
     private func storeToMemory(_ response: CachedURLResponse, for request: URLRequest) {
         guard let key = cacheKey(for: request) else { return }
-        let cost = response.data.count
-        memoryCache.setObject(response, forKey: key as NSString, cost: cost)
+        memoryCache.setObject(response, forKey: key as NSString, cost: response.data.count)
     }
     
     private func storeToTemp(_ response: CachedURLResponse, for request: URLRequest) {
         guard let key = cacheKey(for: request) else { return }
         let fileURL = tempCacheDir.appendingPathComponent(key)
-        if let data = try? NSKeyedArchiver.archivedData(withRootObject: response, requiringSecureCoding: false) {
+        if let data = try? NSKeyedArchiver.archivedData(withRootObject: response, requiringSecureCoding: true) {
             try? data.write(to: fileURL)
         }
     }
@@ -133,58 +123,49 @@ class FourLevelCache: URLCache {
     private func storeToStatic(_ response: CachedURLResponse, for request: URLRequest) {
         guard let key = cacheKey(for: request) else { return }
         let fileURL = staticCacheDir.appendingPathComponent(key)
-        if let data = try? NSKeyedArchiver.archivedData(withRootObject: response, requiringSecureCoding: false) {
+        if let data = try? NSKeyedArchiver.archivedData(withRootObject: response, requiringSecureCoding: true) {
             try? data.write(to: fileURL)
         }
     }
     
     // MARK: - 重写URLCache方法
     override func cachedResponse(for request: URLRequest) -> CachedURLResponse? {
-        // 强制刷新请求不使用缓存
         if request.cachePolicy == .reloadIgnoringLocalCacheData ||
            request.cachePolicy == .reloadIgnoringLocalAndRemoteCacheData {
             return nil
         }
         
-        // 一级：内存缓存
         if let cached = memoryCachedResponse(for: request) {
             return cached
         }
         
-        // 二级：瞬时磁盘缓存（动态页面）
         if !isStaticResource(request), let cached = tempCachedResponse(for: request) {
-            storeToMemory(cached, for: request) // 回写到内存
+            storeToMemory(cached, for: request)
             return cached
         }
         
-        // 三级：持久静态缓存
         if isStaticResource(request), let cached = staticCachedResponse(for: request) {
-            storeToMemory(cached, for: request) // 回写到内存
+            storeToMemory(cached, for: request)
             return cached
         }
         
-        // 四级：网络兜底（返回nil让系统走网络）
         return nil
     }
     
     override func storeCachedResponse(_ cachedResponse: CachedURLResponse, for request: URLRequest) {
-        // 不缓存POST请求和非HTTP响应
         guard request.httpMethod != "POST",
               cachedResponse.response is HTTPURLResponse else {
             return
         }
         
-        // 一级：写入内存
         storeToMemory(cachedResponse, for: request)
         
-        // 二级/三级：写入磁盘
         if isStaticResource(request) {
             storeToStatic(cachedResponse, for: request)
         } else {
             storeToTemp(cachedResponse, for: request)
         }
         
-        // 检查总容量，超标自动清理
         checkAndCleanupIfNeeded()
     }
     
@@ -218,10 +199,10 @@ class FourLevelCache: URLCache {
     }
     
     func clearCacheForSite(_ host: String) {
-        let predicate = NSPredicate(format: "SELF CONTAINS %@", host.replacingOccurrences(of: ".", with: "_"))
+        let hostKey = host.replacingOccurrences(of: ".", with: "_")
         for dir in [tempCacheDir, staticCacheDir] {
             if let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path) {
-                for file in files where predicate.evaluate(with: file) {
+                for file in files where file.contains(hostKey) {
                     try? FileManager.default.removeItem(at: dir.appendingPathComponent(file))
                 }
             }
@@ -230,23 +211,15 @@ class FourLevelCache: URLCache {
     
     // MARK: - 过期清理
     private func cleanupExpiredCache() {
-        // 清理二级过期缓存
-        if let files = try? FileManager.default.contentsOfDirectory(atPath: tempCacheDir.path) {
-            for file in files {
-                let fileURL = tempCacheDir.appendingPathComponent(file)
-                if let modDate = try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date,
-                   Date().timeIntervalSince(modDate) > tempCacheTTL {
-                    try? FileManager.default.removeItem(at: fileURL)
-                }
-            }
-        }
-        // 清理三级过期缓存
-        if let files = try? FileManager.default.contentsOfDirectory(atPath: staticCacheDir.path) {
-            for file in files {
-                let fileURL = staticCacheDir.appendingPathComponent(file)
-                if let modDate = try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date,
-                   Date().timeIntervalSince(modDate) > staticCacheTTL {
-                    try? FileManager.default.removeItem(at: fileURL)
+        for dir in [tempCacheDir, staticCacheDir] {
+            let ttl = (dir == tempCacheDir) ? tempCacheTTL : staticCacheTTL
+            if let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path) {
+                for file in files {
+                    let fileURL = dir.appendingPathComponent(file)
+                    if let modDate = try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date,
+                       Date().timeIntervalSince(modDate) > ttl {
+                        try? FileManager.default.removeItem(at: fileURL)
+                    }
                 }
             }
         }
@@ -266,7 +239,6 @@ class FourLevelCache: URLCache {
             }
         }
         if totalSize > maxCacheSize {
-            // LRU淘汰：删除最旧的文件
             cleanupLRU()
         }
     }
@@ -283,7 +255,6 @@ class FourLevelCache: URLCache {
                 }
             }
         }
-        // 按时间排序，删除最旧的30%
         allFiles.sort { $0.date < $1.date }
         let removeCount = allFiles.count / 3
         for i in 0..<removeCount {

@@ -1296,7 +1296,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     // MARK: - 四级缓存管理
     private func showCacheManager() {
-        let sizes = FourLevelCache.shared.cacheSize()
+        let sizes = fourLevelCache.cacheSize()
         let tempMB = Double(sizes.temp) / 1024 / 1024
         let staticMB = Double(sizes.static) / 1024 / 1024
         let alert = UIAlertController(
@@ -1305,24 +1305,24 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             preferredStyle: .actionSheet
         )
         alert.addAction(UIAlertAction(title: "🗑 清理全部缓存", style: .destructive) { _ in
-            FourLevelCache.shared.removeAllCachedResponses()
+            fourLevelCache.removeAllCachedResponses()
             self.showToast("已清理全部四级缓存")
         })
         alert.addAction(UIAlertAction(title: "⚡ 仅清理内存缓存", style: .default) { _ in
-            FourLevelCache.shared.clearMemoryCache()
+            fourLevelCache.clearMemoryCache()
             self.showToast("已清理一级内存缓存")
         })
         alert.addAction(UIAlertAction(title: "📄 仅清理动态页面缓存", style: .default) { _ in
-            FourLevelCache.shared.clearTempCache()
+            fourLevelCache.clearTempCache()
             self.showToast("已清理二级瞬时缓存")
         })
         alert.addAction(UIAlertAction(title: "🖼 仅清理静态资源缓存", style: .default) { _ in
-            FourLevelCache.shared.clearStaticCache()
+            fourLevelCache.clearStaticCache()
             self.showToast("已清理三级持久缓存")
         })
         if let host = currentWebView.url?.host {
             alert.addAction(UIAlertAction(title: "📍 清理当前站点缓存（\(host)）", style: .default) { _ in
-                FourLevelCache.shared.clearCacheForSite(host)
+                fourLevelCache.clearCacheForSite(host)
                 self.showToast("已清理 \(host) 缓存")
                 self.currentWebView.reload()
             })
