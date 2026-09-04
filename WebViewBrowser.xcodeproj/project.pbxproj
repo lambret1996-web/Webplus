@@ -16,6 +16,7 @@
 		THIRDPARTY_ID /* ThirdPartyLoginManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = THIRDPARTY_REF /* ThirdPartyLoginManager.swift */; };
 		APPPROXY_PROVIDER_BUILD /* AppProxyProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPPROXY_PROVIDER_REF /* AppProxyProvider.swift */; };
 		VLESSCLIENT_BUILD /* VLESSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = VLESSCLIENT_REF /* VLESSClient.swift */; };
+		VLESSCLIENT_MAIN_BUILD /* VLESSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = VLESSCLIENT_MAIN_REF /* VLESSClient.swift */; };
 		APPPROXY_EMBED /* AppProxyExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = APPPROXY_PRODUCT_REF /* AppProxyExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		ASSETS_ID /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = ASSETS_REF /* Assets.xcassets */; };
 		LAUNCHSCREEN_ID /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = LAUNCHSCREEN_REF /* LaunchScreen.storyboard */; };
@@ -35,6 +36,7 @@
 		PRODUCT_REF /* WebViewBrowser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WebViewBrowser.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		APPPROXY_PROVIDER_REF /* AppProxyProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppProxyProvider.swift; sourceTree = "<group>"; };
 		VLESSCLIENT_REF /* VLESSClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VLESSClient.swift; sourceTree = "<group>"; };
+		VLESSCLIENT_MAIN_REF /* VLESSClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VLESSClient.swift; sourceTree = "<group>"; };
 		APPPROXY_INFO_REF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		APPPROXY_ENTITLEMENTS_REF /* AppProxyExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppProxyExtension.entitlements; sourceTree = "<group>"; };
 		MAIN_ENTITLEMENTS_REF /* WebViewBrowser.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WebViewBrowser.entitlements; sourceTree = "<group>"; };
@@ -197,7 +199,7 @@ APPPROXY_SOURCES /* Sources */ = {
 			buildActionMask = 2147483647;
 			files = (
 				APPPROXY_PROVIDER_BUILD /* AppProxyProvider.swift in Sources */,
-				VLESSCLIENT_BUILD /* VLESSClient.swift in Sources */,
+				VLESSCLIENT_MAIN_BUILD /* VLESSClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
