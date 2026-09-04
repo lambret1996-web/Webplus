@@ -12,7 +12,7 @@
 		SCENEDELEGATE_ID /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = SCENEDELEGATE_REF /* SceneDelegate.swift */; };
 		DOWNLOADMANAGER_ID /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DOWNLOADMANAGER_REF /* DownloadManager.swift */; };
 		DOWNLOADPANEL_ID /* DownloadPanelViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DOWNLOADPANEL_REF /* DownloadPanelViewController.swift */; };
-		D2AC1DC0D789919306266588 /* FourLevelCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2AC1DC0D789919306266588 /* FourLevelCache.swift */;};
+		D2AC1DC0D789919306266588 /* FourLevelCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2AC1DC0D789919306266588 /* FourLevelCache.swift */; };
 		THIRDPARTY_ID /* ThirdPartyLoginManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = THIRDPARTY_REF /* ThirdPartyLoginManager.swift */; };
 		ASSETS_ID /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = ASSETS_REF /* Assets.xcassets */; };
 		LAUNCHSCREEN_ID /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = LAUNCHSCREEN_REF /* LaunchScreen.storyboard */; };
