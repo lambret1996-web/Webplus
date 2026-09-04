@@ -459,7 +459,7 @@ class SubscriptionManager {
         for sub in subscriptions {
             group.enter()
             fetchNodes(from: sub.url) { nodes, error in
-                if let nodes = nodes, !nodes.isEmpty {
+                if !nodes.isEmpty {
                     for node in nodes {
                         if !VLESSNodeManager.shared.nodes.contains(where: { $0.uuid == node.uuid && $0.host == node.host }) {
                             VLESSNodeManager.shared.addNode(node)
