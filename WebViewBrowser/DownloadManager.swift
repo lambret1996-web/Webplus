@@ -421,6 +421,9 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
                 self.onStatusChanged?(task)
             }
 
+        }
+    }
+
 // MARK: - 格式化工具
 extension DownloadTask {
     var sizeText: String {
@@ -435,8 +438,4 @@ extension DownloadTask {
         fmt.dateFormat = "MM-dd HH:mm"
         return fmt.string(from: finishTime ?? startTime)
     }
-        }
-    }
-
-
 }
