@@ -228,6 +228,16 @@ jobs:
       - name: Export IPA (Signed)
         if: steps.detect.outputs.has_cert == 'true'
         run: |
+          # 在导出前，删除Extension的签名文件，避免描述文件不匹配
+          APP_PATH="build/App.xcarchive/Products/Applications/${APP_NAME}.app"
+          EXTENSION_PATH="${APP_PATH}/PlugIns/AppProxyExtension.appex"
+          if [ -d "$EXTENSION_PATH" ]; then
+            echo "清理Extension签名..."
+            rm -rf "${EXTENSION_PATH}/_CodeSignature"
+            rm -f "${EXTENSION_PATH}/embedded.mobileprovision"
+            echo "Extension签名已清理"
+          fi
+          
           xcodebuild -exportArchive \
             -archivePath build/App.xcarchive \
             -exportPath build/export \
