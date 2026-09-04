@@ -13,7 +13,6 @@
 		DOWNLOADMANAGER_ID /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DOWNLOADMANAGER_REF /* DownloadManager.swift */; };
 		DOWNLOADPANEL_ID /* DownloadPanelViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DOWNLOADPANEL_REF /* DownloadPanelViewController.swift */; };
 		FOURLEVELCACHE_ID /* FourLevelCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FOURLEVELCACHE_REF /* FourLevelCache.swift */; };
-		THIRDPARTY_ID /* ThirdPartyLoginManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = THIRDPARTY_REF /* ThirdPartyLoginManager.swift */; };
 		APPPROXY_PROVIDER_BUILD /* AppProxyProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPPROXY_PROVIDER_REF /* AppProxyProvider.swift */; };
 		VLESSCLIENT_BUILD /* VLESSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = VLESSCLIENT_REF /* VLESSClient.swift */; };
 		VLESSCLIENT_MAIN_BUILD /* VLESSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = VLESSCLIENT_MAIN_REF /* VLESSClient.swift */; };
@@ -29,7 +28,6 @@
 		DOWNLOADMANAGER_REF /* DownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManager.swift; sourceTree = "<group>"; };
 		DOWNLOADPANEL_REF /* DownloadPanelViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadPanelViewController.swift; sourceTree = "<group>"; };
 		FOURLEVELCACHE_REF /* FourLevelCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FourLevelCache.swift; sourceTree = "<group>"; };
-		THIRDPARTY_REF /* ThirdPartyLoginManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThirdPartyLoginManager.swift; sourceTree = "<group>"; };
 		ASSETS_REF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		LAUNCHSCREEN_REF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		INFOPLIST_REF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -79,7 +77,6 @@ APPPROXY_FRAMEWORKS /* Frameworks */ = {
 				DOWNLOADMANAGER_REF /* DownloadManager.swift */,
 				DOWNLOADPANEL_REF /* DownloadPanelViewController.swift */,
 				FOURLEVELCACHE_REF /* FourLevelCache.swift */,
-				THIRDPARTY_REF /* ThirdPartyLoginManager.swift */,
 				SCENEDELEGATE_REF /* SceneDelegate.swift */,
 				VIEWCONTROLLER_REF /* ViewController.swift */,
 				ASSETS_REF /* Assets.xcassets */,
@@ -201,7 +198,6 @@ APPPROXY_TARGET /* AppProxyExtension */ = {
 				DOWNLOADMANAGER_ID /* DownloadManager.swift in Sources */,
 				DOWNLOADPANEL_ID /* DownloadPanelViewController.swift in Sources */,
 				FOURLEVELCACHE_ID /* FourLevelCache.swift in Sources */,
-				THIRDPARTY_ID /* ThirdPartyLoginManager.swift in Sources */,
 				SCENEDELEGATE_ID /* SceneDelegate.swift in Sources */,
 				VIEWCONTROLLER_ID /* ViewController.swift in Sources */,
 				VLESSCLIENT_MAIN_BUILD /* VLESSClient.swift in Sources */,

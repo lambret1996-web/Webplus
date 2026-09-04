@@ -79,11 +79,10 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
     
     private override init() {
         super.init()
-        let config = URLSessionConfiguration.background(withIdentifier: "com.browser.downloads")
-        config.sessionSendsLaunchEvents = true
-        config.isDiscretionary = false
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 300
         session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-        loadPersistedTasks()
     }
     
     // MARK: - 持久化
@@ -300,6 +299,7 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
                 task.status = .failed
                 tasks[id] = task
                 persist()
+                print("[Download] 文件保存失败: \(fileName), 临时文件: \(location.path)")
                 DispatchQueue.main.async { self.onStatusChanged?(task) }
             }
         }
