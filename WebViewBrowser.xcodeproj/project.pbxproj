@@ -65,6 +65,7 @@ APPPROXY_FRAMEWORKS /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 				SOURCESGROUP_ID /* WebViewBrowser */,
+				APPPROXY_GROUP_ID /* AppProxyExtension */,
 				PRODUCTSGROUP_ID /* Products */,
 			);
 			sourceTree = "<group>";
@@ -72,6 +73,8 @@ APPPROXY_FRAMEWORKS /* Frameworks */ = {
 		SOURCESGROUP_ID /* WebViewBrowser */ = {
 			isa = PBXGroup;
 			children = (
+				MAIN_ENTITLEMENTS_REF /* WebViewBrowser.entitlements */,
+				VLESSCLIENT_MAIN_REF /* VLESSClient.swift */,
 				APPDELEGATE_REF /* AppDelegate.swift */,
 				DOWNLOADMANAGER_REF /* DownloadManager.swift */,
 				DOWNLOADPANEL_REF /* DownloadPanelViewController.swift */,
@@ -84,6 +87,17 @@ APPPROXY_FRAMEWORKS /* Frameworks */ = {
 				INFOPLIST_REF /* Info.plist */,
 			);
 			path = WebViewBrowser;
+			sourceTree = "<group>";
+		};
+		APPPROXY_GROUP_ID /* AppProxyExtension */ = {
+			isa = PBXGroup;
+			children = (
+				APPPROXY_PROVIDER_REF /* AppProxyProvider.swift */,
+				VLESSCLIENT_REF /* VLESSClient.swift */,
+				APPPROXY_INFO_REF /* Info.plist */,
+				APPPROXY_ENTITLEMENTS_REF /* AppProxyExtension.entitlements */,
+			);
+			path = AppProxyExtension;
 			sourceTree = "<group>";
 		};
 		PRODUCTSGROUP_ID /* Products */ = {
