@@ -476,3 +476,99 @@ class SubscriptionManager {
         }
     }
 }
+
+// MARK: - 节点测试结果
+struct NodeTestResult {
+    let node: VLESSConfig
+    let latency: Int? // 毫秒，nil表示测试失败
+    let success: Bool
+    let errorMessage: String?
+}
+
+// MARK: - 节点测试器
+class NodeTester {
+    static let shared = NodeTester()
+    
+    /// 测试单个节点延迟
+    func testNode(_ node: VLESSConfig, timeout: TimeInterval = 5, completion: @escaping (NodeTestResult) -> Void) {
+        let startTime = Date()
+        
+        // 构建测试URL（用WebSocket端点测试连接）
+        let scheme = node.tls ? "https" : "http"
+        let wsHost = node.wsHost ?? node.host
+        let testURL = URL(string: "\(scheme)://\(node.host):\(node.port)\(node.wsPath)")!
+        
+        var request = URLRequest(url: testURL)
+        request.timeoutInterval = timeout
+        request.setValue(wsHost, forHTTPHeaderField: "Host")
+        request.setValue("Upgrade", forHTTPHeaderField: "Connection")
+        request.setValue("websocket", forHTTPHeaderField: "Upgrade")
+        request.setValue("13", forHTTPHeaderField: "Sec-WebSocket-Version")
+        
+        let task = URLSession.shared.dataTask(with: request) { _, response, error in
+            let elapsed = Int(Date().timeIntervalSince(startTime) * 1000)
+            
+            if let error = error {
+                // 超时或连接失败
+                let nsError = error as NSError
+                if nsError.code == NSURLErrorTimedOut {
+                    completion(NodeTestResult(node: node, latency: nil, success: false, errorMessage: "连接超时"))
+                } else {
+                    completion(NodeTestResult(node: node, latency: nil, success: false, errorMessage: error.localizedDescription))
+                }
+                return
+            }
+            
+            // 只要能建立连接（即使返回400等错误也算节点可达）
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 101 || httpResponse.statusCode == 400 || httpResponse.statusCode == 403 || httpResponse.statusCode == 200 {
+                    completion(NodeTestResult(node: node, latency: elapsed, success: true, errorMessage: nil))
+                } else {
+                    completion(NodeTestResult(node: node, latency: elapsed, success: true, errorMessage: "状态码: \(httpResponse.statusCode)"))
+                }
+            } else {
+                completion(NodeTestResult(node: node, latency: elapsed, success: true, errorMessage: nil))
+            }
+        }
+        task.resume()
+    }
+    
+    /// 批量测试所有节点
+    func testAllNodes(_ nodes: [VLESSConfig], timeout: TimeInterval = 5, progress: @escaping (Int, Int) -> Void, completion: @escaping ([NodeTestResult]) -> Void) {
+        var results: [NodeTestResult] = []
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "nodeTester", attributes: .concurrent)
+        let semaphore = DispatchSemaphore(value: 3) // 最多3个并发
+        
+        for (index, node) in nodes.enumerated() {
+            group.enter()
+            queue.async {
+                semaphore.wait()
+                self.testNode(node, timeout: timeout) { result in
+                    results.append(result)
+                    progress(index + 1, nodes.count)
+                    semaphore.signal()
+                    group.leave()
+                }
+            }
+        }
+        
+        group.notify(queue: .main) {
+            // 按原顺序排序
+            results.sort { r1, r2 in
+                nodes.firstIndex(where: { $0.host == r1.node.host && $0.port == r1.node.port }) ?? 0 <
+                nodes.firstIndex(where: { $0.host == r2.node.host && $0.port == r2.node.port }) ?? 0
+            }
+            completion(results)
+        }
+    }
+    
+    /// 格式化延迟显示
+    static func formatLatency(_ latency: Int?) -> String {
+        guard let latency = latency else { return "失败" }
+        if latency < 100 { return "\(latency)ms (优)" }
+        if latency < 200 { return "\(latency)ms (良)" }
+        if latency < 500 { return "\(latency)ms (中)" }
+        return "\(latency)ms (差)"
+    }
+}

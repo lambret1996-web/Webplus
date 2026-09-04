@@ -1887,6 +1887,72 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         present(alert, animated: true)
     }
     
+    private func testAllNodes() {
+        let nodes = VLESSNodeManager.shared.nodes
+        guard !nodes.isEmpty else {
+            showToast("暂无节点，请先添加")
+            return
+        }
+        
+        let alert = UIAlertController(title: "测试节点延迟", message: "正在测试 0/\(nodes.count) 个节点...", preferredStyle: .alert)
+        present(alert, animated: true)
+        
+        NodeTester.shared.testAllNodes(nodes, timeout: 5, progress: { current, total in
+            DispatchQueue.main.async {
+                alert.message = "正在测试 \(current)/\(total) 个节点..."
+            }
+        }) { results in
+            DispatchQueue.main.async {
+                alert.dismiss(animated: true) {
+                    self.showNodeTestResults(results)
+                }
+            }
+        }
+    }
+    
+    private func showNodeTestResults(_ results: [NodeTestResult]) {
+        let alert = UIAlertController(title: "节点测试结果", message: nil, preferredStyle: .actionSheet)
+        
+        // 按延迟排序，成功的在前
+        let sorted = results.sorted { r1, r2 in
+            if r1.success && r2.success {
+                return (r1.latency ?? Int.max) < (r2.latency ?? Int.max)
+            }
+            return r1.success && !r2.success
+        }
+        
+        var message = "共 \(results.count) 个节点\n"
+        message += "可用: \(results.filter { $0.success }.count) | 失败: \(results.filter { !$0.success }.count)\n\n"
+        
+        for (i, result) in sorted.enumerated() {
+            let status = result.success ? "✓" : "✗"
+            let latency = NodeTester.formatLatency(result.latency)
+            message += "\(i+1). \(status) \(result.node.name)\n   \(result.node.host):\(result.node.port) - \(latency)\n"
+        }
+        
+        alert.message = message
+        
+        // 快速切换到最快节点
+        if let fastest = sorted.first(where: { $0.success }) {
+            alert.addAction(UIAlertAction(title: "⚡ 切换到最快节点: \(fastest.node.name)", style: .default) { _ in
+                VLESSNodeManager.shared.currentNode = fastest.node
+                self.showToast("已切换到: \(fastest.node.name)")
+            })
+        }
+        
+        alert.addAction(UIAlertAction(title: "重新测试", style: .default) { _ in
+            self.testAllNodes()
+        })
+        
+        alert.addAction(UIAlertAction(title: "关闭", style: .cancel))
+        
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+    
     private func showDeleteVLESSNode() {
         let nodes = VLESSNodeManager.shared.nodes
         guard !nodes.isEmpty else {
