@@ -70,7 +70,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         ("iPad Safari", "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"),
         ("Chrome iOS", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0.6099.119 Mobile/15E148 Safari/604.1"),
         ("Firefox iOS", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/121.0 Mobile/15E148 Safari/605.1.15"),
-        ("桌面版 Safari", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"),
+        ("桌面版 Safari (Mac)", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"),
+        ("Chrome (Windows)", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+        ("Edge (Windows)", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0"),
         ("自定义 UA", "")
     ]
     private let customUAKey = "customUserAgent"
@@ -2007,7 +2009,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         handleTranslateLongPress(UILongPressGestureRecognizer())
     }
     
-    private func setEdgeMenu(open: Bool, duration: TimeInterval = 0.3) {
+    private func setEdgeMenu(open: Bool, duration: TimeInterval = 0.6) {
         edgeMenuIsOpen = open
         let menuWidth = view.bounds.width * 0.50
         edgeMenuLeadingConstraint.constant = open ? -menuWidth : 0
@@ -2059,6 +2061,17 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         bottomCenterDoubleTap.cancelsTouchesInView = false
         bottomCenterDoubleTap.delegate = self
         view.addGestureRecognizer(bottomCenterDoubleTap)
+        // 地址栏双击→复制当前URL
+        let urlDoubleTap = UITapGestureRecognizer(target: self, action: #selector(handleUrlDoubleTap(_:)))
+        urlDoubleTap.numberOfTapsRequired = 2
+        urlTextField.addGestureRecognizer(urlDoubleTap)
+    }
+    
+    @objc private func handleUrlDoubleTap(_ gesture: UITapGestureRecognizer) {
+        if let url = currentWebView.url?.absoluteString, !url.isEmpty {
+            UIPasteboard.general.string = url
+            showToast("链接已复制")
+        }
     }
     // MARK: - 双击手势：左下角到底部，右下角到顶部
     @objc private func handleScreenDoubleTap(_ gesture: UITapGestureRecognizer) {
@@ -3270,42 +3283,35 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
         guard gesture.view === currentWebView else { return }
         let translation = gesture.translation(in: view)
-        let velocity = gesture.velocity(in: view)
         let screenWidth = view.bounds.width
-        let switchThreshold = screenWidth * 0.6 // 拖拽60%触发标签切换
+        let threshold = screenWidth * 0.5 // 拖拽50%触发前进/后退
         
         switch gesture.state {
         case .began:
             gestureStartPoint = gesture.location(in: view)
-            gestureStartDate = Date()
         case .changed:
-            // 跟手：页面跟随手指水平平移（仅水平方向，垂直方向不影响）
+            // 跟手：页面跟随手指水平平移
             let dx = translation.x
             if abs(dx) > abs(translation.y) * 1.2 {
-                // 限制平移范围，最多移动屏幕宽度的80%
-                let limitedDx = max(-screenWidth * 0.6, min(screenWidth * 0.6, dx))
+                let limitedDx = max(-screenWidth * 0.5, min(screenWidth * 0.5, dx))
                 currentWebView.transform = CGAffineTransform(translationX: limitedDx, y: 0)
             }
         case .ended:
             let dx = translation.x
-            let elapsed = Date().timeIntervalSince(gestureStartDate)
-            // 快速滑动（速度≥500pt/s）直接切换，无视距离
-            let fastSwipe = elapsed <= 0.3 && abs(velocity.x) >= 500
-            // 慢速滑动需要达到55%阈值
-            let enoughDistance = abs(dx) >= switchThreshold
-            
             // 回弹动画
             UIView.animate(withDuration: 0.25, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.5, options: .curveEaseOut) {
                 self.currentWebView.transform = .identity
             }
-            
-            if fastSwipe || enoughDistance {
-                if dx < 0 {
-                    // 左滑→下一个标签
-                    self.switchToTab(index: (self.activeIndex + 1) % self.webViews.count)
-                } else {
-                    // 右滑→上一个标签
-                    self.switchToTab(index: (self.activeIndex - 1 + self.webViews.count) % self.webViews.count)
+            // 左滑（手指从右往左）→ 网页后退
+            if dx < -threshold {
+                if currentWebView.canGoBack {
+                    currentWebView.goBack()
+                }
+            }
+            // 右滑（手指从左往右）→ 网页前进
+            else if dx > threshold {
+                if currentWebView.canGoForward {
+                    currentWebView.goForward()
                 }
             }
         case .cancelled:
@@ -3650,6 +3656,54 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
         return nil
     }
+
+    // MARK: - 菜单汉化
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        // 过滤系统菜单，保留常用操作
+        let systemActions: Set<Selector> = [
+            #selector(cut(_:)),
+            #selector(copy(_:)),
+            #selector(paste(_:)),
+            #selector(select(_:)),
+            #selector(selectAll(_:))
+        ]
+        if systemActions.contains(action) {
+            return true
+        }
+        return super.canPerformAction(action, withSender: sender)
+    }
+    
+    override func cut(_ sender: Any?) {
+        UIPasteboard.general.string = urlTextField.text
+        urlTextField.text = ""
+        showToast("已剪切")
+    }
+    
+    override func copy(_ sender: Any?) {
+        if let text = urlTextField.text, !text.isEmpty {
+            UIPasteboard.general.string = text
+            showToast("已复制")
+        } else if let url = currentWebView.url?.absoluteString {
+            UIPasteboard.general.string = url
+            showToast("链接已复制")
+        }
+    }
+    
+    override func paste(_ sender: Any?) {
+        if let text = UIPasteboard.general.string {
+            urlTextField.text = text
+            showToast("已粘贴")
+        }
+    }
+    
+    override func select(_ sender: Any?) {
+        urlTextField.selectedTextRange = urlTextField.textRange(from: urlTextField.beginningOfDocument, to: urlTextField.endOfDocument)
+    }
+    
+    override func selectAll(_ sender: Any?) {
+        urlTextField.selectedTextRange = urlTextField.textRange(from: urlTextField.beginningOfDocument, to: urlTextField.endOfDocument)
+    }
+
     deinit {
         for webView in webViews {
             webView.removeObserver(self, forKeyPath: #keyPath(WKWebView.estimatedProgress))
