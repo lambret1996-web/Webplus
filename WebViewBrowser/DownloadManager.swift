@@ -71,7 +71,7 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
     private var session: URLSession!
     private var tasks: [String: DownloadTask] = [:]
     private var urlSessionTasks: [String: URLSessionDownloadTask] = [:]
-    private var wkDownloads: [String: Any] = [:]
+    private var wkDownloads: [String: AnyObject] = [:]
     private var wkProgressObservers: [String: NSKeyValueObservation] = [:]
     private var wkDestinationURLs: [String: URL] = [:]
     private let taskQueue = DispatchQueue(label: "download.manager.queue")
@@ -336,7 +336,7 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
     @available(iOS 15.0, *)
     func setDestinationURL(_ url: URL, for download: WKDownload) {
         taskQueue.sync {
-            if let id = wkDownloads.first(where: { ($0.value as? WKDownload) === download })?.key {
+            if let id = wkDownloads.first(where: { $0.value === download })?.key {
                 wkDestinationURLs[id] = url
             }
         }

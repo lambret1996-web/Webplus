@@ -1586,9 +1586,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         closeEdgeMenu()
         let panel = DownloadPanelViewController()
         panel.modalPresentationStyle = .pageSheet
-        if let sheet = panel.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = false
+        if #available(iOS 15.0, *) {
+            if let sheet = panel.sheetPresentationController {
+                sheet.detents = [.medium(), .large()]
+                sheet.prefersGrabberVisible = false
+            }
         }
         present(panel, animated: true)
     }
@@ -3076,9 +3078,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     @objc func downloadButtonTapped() {
         let panel = DownloadPanelViewController()
         panel.modalPresentationStyle = .pageSheet
-        if let sheet = panel.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = false
+        if #available(iOS 15.0, *) {
+            if let sheet = panel.sheetPresentationController {
+                sheet.detents = [.medium(), .large()]
+                sheet.prefersGrabberVisible = false
+            }
         }
         present(panel, animated: true)
     }
@@ -3599,6 +3603,20 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             decisionHandler(.cancel)
             DownloadManager.shared.startDownload(url: downloadURL.absoluteString, fileName: fileName, mimeType: mime)
         }
+
+    @available(iOS 15.0, *)
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+        // 记录下载任务
+        if let url = navigationResponse.response.url?.absoluteString {
+            let fileName = navigationResponse.response.suggestedFilename ?? (URL(string: url)?.lastPathComponent ?? "download")
+            let fileSize = (navigationResponse.response as? HTTPURLResponse)?.expectedContentLength ?? 0
+            DownloadManager.shared.startWKDownload(download: download, url: url, fileName: fileName, fileSize: fileSize, mimeType: navigationResponse.response.mimeType ?? "")
+            DispatchQueue.main.async {
+                self.showToast("开始下载：\(fileName)")
+            }
+        }
+    }
     }
     // MARK: - WKNavigationDelegate
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -3827,18 +3845,6 @@ extension ViewController: UIGestureRecognizerDelegate {
 // MARK: - WKDownloadDelegate (iOS 15+)
 @available(iOS 15.0, *)
 extension ViewController: WKDownloadDelegate {
-    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-        download.delegate = self
-        // 记录下载任务
-        if let url = navigationResponse.response.url?.absoluteString {
-            let fileName = navigationResponse.response.suggestedFilename ?? (URL(string: url)?.lastPathComponent ?? "download")
-            let fileSize = (navigationResponse.response as? HTTPURLResponse)?.expectedContentLength ?? 0
-            DownloadManager.shared.startWKDownload(download: download, url: url, fileName: fileName, fileSize: fileSize, mimeType: navigationResponse.response.mimeType ?? "")
-            DispatchQueue.main.async {
-                self.showToast("开始下载：\(fileName)")
-            }
-        }
-    }
     
     @objc func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
         let fileManager = FileManager.default
