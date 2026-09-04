@@ -177,6 +177,39 @@ APPPROXY_TARGET /* AppProxyExtension */ = {
 		};
 /* End PBXProject section */
 
+/* Begin PBXContainerItemProxy section */
+		APPPROXY_CONTAINERPROXY /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = PROJECT_ID /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = APPPROXY_TARGET;
+			remoteInfo = AppProxyExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		EMBED_APP_EXTENSIONS /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				APPPROXY_EMBED /* AppProxyExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		APPPROXY_DEPENDENCY /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = APPPROXY_TARGET /* AppProxyExtension */;
+			targetProxy = APPPROXY_CONTAINERPROXY /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+
 /* Begin PBXResourcesBuildPhase section */
 		RESOURCES_PHASE_ID /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
