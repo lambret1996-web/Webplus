@@ -3633,10 +3633,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             decisionHandler(.allow)
             return
         }
-        // 拦截第三方登录/唤起URL
-            decisionHandler(.cancel)
-            return
-        }
         // 拦截tel:、sms:、mailto:等系统URL
         let scheme = url.scheme?.lowercased() ?? ""
         if ["tel", "sms", "mailto"].contains(scheme) {
@@ -3769,6 +3765,4 @@ extension ViewController: UIGestureRecognizerDelegate {
             }
         }
     }
-
-
-
+}
