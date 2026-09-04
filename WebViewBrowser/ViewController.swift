@@ -1742,8 +1742,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 }
             }
             group.notify(queue: .main) {
-                // 旧配置删除完成后，创建新配置
-                self?.createAndStartProxy(useVLESS: useVLESS)
+                // 旧配置删除完成后，延迟0.5秒再创建新配置，确保系统完全清理
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self?.createAndStartProxy(useVLESS: useVLESS)
+                }
             }
         }
     }
@@ -3398,7 +3400,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         let translation = gesture.translation(in: view)
         let velocity = gesture.velocity(in: view)
         let screenWidth = view.bounds.width
-        let switchThreshold = screenWidth * 0.55 // 拖拽55%触发标签切换
+        let switchThreshold = screenWidth * 0.5 // 拖拽50%触发标签切换
         
         switch gesture.state {
         case .began:

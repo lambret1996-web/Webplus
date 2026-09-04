@@ -260,7 +260,7 @@ class VLESSNodeManager {
         
         let content = String(url.dropFirst(8))
         let parts = content.components(separatedBy: "#")
-        let name = parts.count > 1 ? parts[1] : "未命名节点"
+        let name = parts.count > 1 ? (parts[1].removingPercentEncoding ?? parts[1]) : "未命名节点"
         
         let mainPart = parts[0]
         let atParts = mainPart.components(separatedBy: "@")

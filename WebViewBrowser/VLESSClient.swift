@@ -260,7 +260,7 @@ class VLESSNodeManager {
         
         let content = String(url.dropFirst(8))
         let parts = content.components(separatedBy: "#")
-        let name = parts.count > 1 ? parts[1] : "未命名节点"
+        let name = parts.count > 1 ? (parts[1].removingPercentEncoding ?? parts[1]) : "未命名节点"
         
         let mainPart = parts[0]
         let atParts = mainPart.components(separatedBy: "@")
@@ -419,7 +419,7 @@ class SubscriptionManager {
             return nil
         }
         
-        let name = json["ps"] as? String ?? "VMess节点"
+        let name = (json["ps"] as? String)?.removingPercentEncoding ?? "VMess节点"
         let wsPath = json["path"] as? String ?? "/"
         let wsHost = json["host"] as? String
         let tls = (json["tls"] as? String) == "tls"
@@ -431,7 +431,7 @@ class SubscriptionManager {
     private func parseTrojan(_ url: String) -> VLESSConfig? {
         let content = String(url.dropFirst(9))
         let parts = content.components(separatedBy: "#")
-        let name = parts.count > 1 ? parts[1] : "Trojan节点"
+        let name = parts.count > 1 ? (parts[1].removingPercentEncoding ?? parts[1]) : "Trojan节点"
         
         let mainPart = parts[0]
         let atParts = mainPart.components(separatedBy: "@")
