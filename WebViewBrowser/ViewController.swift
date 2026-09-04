@@ -70,6 +70,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private let adBlockKey = "adBlockEnabled"
     private let customAdDomainsKey = "customAdDomains"
     private let globalImageBlockKey = "globalImageBlock"
+    private let fourLevelCache = FourLevelCache(memoryCapacity: 80 * 1024 * 1024, diskCapacity: 200 * 1024 * 1024, diskPath: "FourLevelCache")
     // MARK: - UA切换
     private var currentUAIndex: Int = 0
     private let uaIndexKey = "currentUAIndex"
