@@ -58,6 +58,20 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var edgeMenuStartX: CGFloat = 0
     private var edgeMenuPanStart: CGPoint = .zero
     private var edgeMenuDidTrigger = false
+    // 菜单功能项排序
+    private var edgeMenuFunctions: [(icon: String, title: String, action: Selector)] = []
+    private var edgeMenuSortMode = false
+    private let edgeMenuOrderKey = "edgeMenuOrder"
+    // UA预设
+    private let uaPresetsExtended = [
+        ("iPhone Safari", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"),
+        ("iPad Safari", "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"),
+        ("Chrome iOS", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0.6099.119 Mobile/15E148 Safari/604.1"),
+        ("Firefox iOS", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/121.0 Mobile/15E148 Safari/605.1.15"),
+        ("桌面版 Safari", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"),
+        ("自定义 UA", "")
+    ]
+    private let customUAKey = "customUserAgent" 
     /// 自定义下拉刷新
     private var refreshViews: [UIView] = []
     private var refreshIndicators: [UIActivityIndicatorView] = []
@@ -1186,8 +1200,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     // MARK: - 右边缘下滑功能菜单
     private func setupEdgeMenu() {
-        // 菜单宽度：60%（约220pt），减少对网页内容遮挡
-        let menuWidth = view.bounds.width * 0.25
+        // 菜单宽度：40%
+        let menuWidth = view.bounds.width * 0.40
         // 遮罩层：点击菜单外任意区域收回菜单
         edgeMenuOverlay = UIButton(type: .system)
         edgeMenuOverlay.backgroundColor = UIColor.black.withAlphaComponent(0.10)
@@ -1203,7 +1217,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             edgeMenuOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
         
-        // 菜单面板（无阴影，避免隐藏时边缘露线）
+        // 菜单面板
         edgeMenuView = UIView()
         edgeMenuView.backgroundColor = .systemBackground
         edgeMenuView.layer.cornerRadius = 16
@@ -1226,23 +1240,25 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         edgeMenuView.addSubview(titleLabel)
         
-        let closeButton = UIButton(type: .system)
-        closeButton.setImage(UIImage(systemName: "xmark"), for: .normal)
-        closeButton.addTarget(self, action: #selector(closeEdgeMenu), for: .touchUpInside)
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        edgeMenuView.addSubview(closeButton)
+        // 右上角三横线按钮：切换排序模式
+        let sortButton = UIButton(type: .system)
+        sortButton.setImage(UIImage(systemName: "line.horizontal.3"), for: .normal)
+        sortButton.tag = 999
+        sortButton.addTarget(self, action: #selector(toggleEdgeMenuSortMode), for: .touchUpInside)
+        sortButton.translatesAutoresizingMaskIntoConstraints = false
+        edgeMenuView.addSubview(sortButton)
         
         NSLayoutConstraint.activate([
             titleLabel.topAnchor.constraint(equalTo: edgeMenuView.safeAreaLayoutGuide.topAnchor, constant: 20),
             titleLabel.leadingAnchor.constraint(equalTo: edgeMenuView.leadingAnchor, constant: 20),
-            closeButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            closeButton.trailingAnchor.constraint(equalTo: edgeMenuView.trailingAnchor, constant: -20),
-            closeButton.widthAnchor.constraint(equalToConstant: 30),
-            closeButton.heightAnchor.constraint(equalToConstant: 30)
+            sortButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            sortButton.trailingAnchor.constraint(equalTo: edgeMenuView.trailingAnchor, constant: -20),
+            sortButton.widthAnchor.constraint(equalToConstant: 30),
+            sortButton.heightAnchor.constraint(equalToConstant: 30)
         ])
         
-        // 功能按钮列表
-        let functions: [(String, String, Selector)] = [
+        // 初始化功能列表（从UserDefaults读取排序）
+        let defaultFunctions: [(String, String, Selector)] = [
             ("bookmark", "增加书签", #selector(edgeMenuAddBookmark)),
             ("book", "书签列表", #selector(edgeMenuShowBookmarks)),
             ("clock", "历史记录", #selector(edgeMenuShowHistory)),
@@ -1250,14 +1266,40 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             ("photo", "全局图片拦截", #selector(edgeMenuToggleImageBlock)),
             ("globe", "UA 切换", #selector(edgeMenuSwitchUA)),
             ("hand.raised", "广告黑名单", #selector(edgeMenuManageAdBlock)),
-            ("trash", "清空当前站点缓存", #selector(edgeMenuClearSiteCache)),
+            ("trash", "清空站点缓存", #selector(edgeMenuClearSiteCache)),
             ("trash.fill", "一键清空缓存", #selector(edgeMenuClearAllCache)),
             ("gear", "设置", #selector(edgeMenuShowSettings))
         ]
+        // 读取保存的排序
+        if let savedOrder = UserDefaults.standard.array(forKey: edgeMenuOrderKey) as? [Int] {
+            var ordered: [(String, String, Selector)] = []
+            for idx in savedOrder where idx < defaultFunctions.count {
+                ordered.append(defaultFunctions[idx])
+            }
+            if ordered.count == defaultFunctions.count {
+                edgeMenuFunctions = ordered
+            } else {
+                edgeMenuFunctions = defaultFunctions
+            }
+        } else {
+            edgeMenuFunctions = defaultFunctions
+        }
         
+        // 渲染功能按钮
+        renderEdgeMenuButtons(after: titleLabel)
+    }
+    
+    private func renderEdgeMenuButtons(after titleLabel: UILabel) {
+        // 移除旧按钮
+        for subview in edgeMenuView.subviews {
+            if subview.tag >= 100 && subview.tag < 200 {
+                subview.removeFromSuperview()
+            }
+        }
         var previousView: UIView = titleLabel
-        for (icon, title, action) in functions {
-            let button = createMenuButton(icon: icon, title: title, action: action)
+        for (idx, item) in edgeMenuFunctions.enumerated() {
+            let button = createMenuButton(icon: item.icon, title: item.title, action: item.action)
+            button.tag = 100 + idx
             edgeMenuView.addSubview(button)
             NSLayoutConstraint.activate([
                 button.topAnchor.constraint(equalTo: previousView.bottomAnchor, constant: previousView == titleLabel ? 20 : 0),
@@ -1265,10 +1307,79 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 button.trailingAnchor.constraint(equalTo: edgeMenuView.trailingAnchor),
                 button.heightAnchor.constraint(equalToConstant: 48)
             ])
+            // 排序模式下添加上下箭头
+            if edgeMenuSortMode {
+                let upBtn = UIButton(type: .system)
+                upBtn.setImage(UIImage(systemName: "chevron.up"), for: .normal)
+                upBtn.tag = 200 + idx
+                upBtn.addTarget(self, action: #selector(moveMenuItemUp(_:)), for: .touchUpInside)
+                upBtn.translatesAutoresizingMaskIntoConstraints = false
+                button.addSubview(upBtn)
+                
+                let downBtn = UIButton(type: .system)
+                downBtn.setImage(UIImage(systemName: "chevron.down"), for: .normal)
+                downBtn.tag = 300 + idx
+                downBtn.addTarget(self, action: #selector(moveMenuItemDown(_:)), for: .touchUpInside)
+                downBtn.translatesAutoresizingMaskIntoConstraints = false
+                button.addSubview(downBtn)
+                
+                NSLayoutConstraint.activate([
+                    upBtn.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+                    upBtn.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -40),
+                    upBtn.widthAnchor.constraint(equalToConstant: 20),
+                    upBtn.heightAnchor.constraint(equalToConstant: 20),
+                    downBtn.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+                    downBtn.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -15),
+                    downBtn.widthAnchor.constraint(equalToConstant: 20),
+                    downBtn.heightAnchor.constraint(equalToConstant: 20)
+                ])
+            }
             previousView = button
         }
     }
     
+    @objc private func toggleEdgeMenuSortMode() {
+        edgeMenuSortMode.toggle()
+        if let sortBtn = edgeMenuView.viewWithTag(999) as? UIButton {
+            sortBtn.tintColor = edgeMenuSortMode ? .systemBlue : .label
+        }
+        if let titleLabel = edgeMenuView.subviews.first(where: { ($0 as? UILabel)?.text == "功能菜单" }) as? UILabel {
+            renderEdgeMenuButtons(after: titleLabel)
+        }
+        if !edgeMenuSortMode {
+            // 保存排序
+            let defaultTitles = ["增加书签", "书签列表", "历史记录", "下载管理", "全局图片拦截", "UA 切换", "广告黑名单", "清空站点缓存", "一键清空缓存", "设置"]
+            var order: [Int] = []
+            for item in edgeMenuFunctions {
+                if let idx = defaultTitles.firstIndex(of: item.title) {
+                    order.append(idx)
+                }
+            }
+            UserDefaults.standard.set(order, forKey: edgeMenuOrderKey)
+            showToast("菜单排序已保存")
+        } else {
+            showToast("排序模式：点击上下箭头调整")
+        }
+    }
+    
+    @objc private func moveMenuItemUp(_ sender: UIButton) {
+        let idx = sender.tag - 200
+        guard idx > 0 else { return }
+        edgeMenuFunctions.swapAt(idx, idx - 1)
+        if let titleLabel = edgeMenuView.subviews.first(where: { ($0 as? UILabel)?.text == "功能菜单" }) as? UILabel {
+            renderEdgeMenuButtons(after: titleLabel)
+        }
+    }
+    
+    @objc private func moveMenuItemDown(_ sender: UIButton) {
+        let idx = sender.tag - 300
+        guard idx < edgeMenuFunctions.count - 1 else { return }
+        edgeMenuFunctions.swapAt(idx, idx + 1)
+        if let titleLabel = edgeMenuView.subviews.first(where: { ($0 as? UILabel)?.text == "功能菜单" }) as? UILabel {
+            renderEdgeMenuButtons(after: titleLabel)
+        }
+    }
+
     private func createMenuButton(icon: String, title: String, action: Selector) -> UIButton {
         let button = UIButton(type: .system)
         let iconView = UIImageView(image: UIImage(systemName: icon))
@@ -1312,15 +1423,72 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     
     @objc private func edgeMenuShowBookmarks() {
         closeEdgeMenu()
+        showBookmarkManager()
+    }
+    
+    private func showBookmarkManager() {
         let bookmarks = UserDefaults.standard.array(forKey: "savedBookmarks") as? [[String: String]] ?? []
-        let alert = UIAlertController(title: "书签列表", message: nil, preferredStyle: .actionSheet)
-        for bm in bookmarks {
-            alert.addAction(UIAlertAction(title: bm["title"] ?? bm["url"] ?? "", style: .default) { _ in
+        let alert = UIAlertController(title: "书签管理（\(bookmarks.count)条）", message: "点击书签跳转，长按可编辑/删除", preferredStyle: .actionSheet)
+        for (idx, bm) in bookmarks.enumerated() {
+            let title = bm["title"] ?? bm["url"] ?? ""
+            alert.addAction(UIAlertAction(title: title, style: .default) { _ in
+                // 点击跳转
                 if let url = URL(string: bm["url"] ?? "") {
                     self.currentWebView.load(URLRequest(url: url))
                 }
             })
+            // 编辑按钮
+            alert.addAction(UIAlertAction(title: "✏️ 编辑：\(title)", style: .default) { _ in
+                self.editBookmark(at: idx)
+            })
+            // 删除按钮
+            alert.addAction(UIAlertAction(title: "🗑 删除：\(title)", style: .destructive) { _ in
+                self.deleteBookmark(at: idx)
+            })
         }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    
+    private func editBookmark(at index: Int) {
+        var bookmarks = UserDefaults.standard.array(forKey: "savedBookmarks") as? [[String: String]] ?? []
+        guard index < bookmarks.count else { return }
+        let bm = bookmarks[index]
+        let alert = UIAlertController(title: "编辑书签", message: nil, preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.text = bm["title"]
+            tf.placeholder = "书签名称"
+        }
+        alert.addTextField { tf in
+            tf.text = bm["url"]
+            tf.placeholder = "网址"
+            tf.keyboardType = .URL
+        }
+        alert.addAction(UIAlertAction(title: "保存", style: .default) { _ in
+            let newTitle = alert.textFields?[0].text?.trimmingCharacters(in: .whitespaces) ?? ""
+            let newURL = alert.textFields?[1].text?.trimmingCharacters(in: .whitespaces) ?? ""
+            guard !newTitle.isEmpty, !newURL.isEmpty else {
+                self.showToast("名称和网址不能为空")
+                return
+            }
+            bookmarks[index] = ["title": newTitle, "url": newURL]
+            UserDefaults.standard.set(bookmarks, forKey: "savedBookmarks")
+            self.showToast("书签已更新")
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    
+    private func deleteBookmark(at index: Int) {
+        var bookmarks = UserDefaults.standard.array(forKey: "savedBookmarks") as? [[String: String]] ?? []
+        guard index < bookmarks.count else { return }
+        let title = bookmarks[index]["title"] ?? ""
+        let alert = UIAlertController(title: "确认删除", message: "确定删除书签「\(title)」？", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "删除", style: .destructive) { _ in
+            bookmarks.remove(at: index)
+            UserDefaults.standard.set(bookmarks, forKey: "savedBookmarks")
+            self.showToast("书签已删除")
+        })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         present(alert, animated: true)
     }
@@ -1357,14 +1525,50 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     
     @objc private func edgeMenuSwitchUA() {
         closeEdgeMenu()
-        // 循环切换UA
-        currentUAIndex = (currentUAIndex + 1) % uaPresets.count
-        UserDefaults.standard.set(currentUAIndex, forKey: uaIndexKey)
-        for wv in webViews {
-            wv.customUserAgent = uaPresets[currentUAIndex]
+        showUASelector()
+    }
+    
+    private func showUASelector() {
+        let alert = UIAlertController(title: "选择 User-Agent", message: "点击切换，立即生效", preferredStyle: .actionSheet)
+        for (name, ua) in uaPresetsExtended {
+            let isCurrent = (currentWebView.customUserAgent == ua) || (name == "自定义 UA" && UserDefaults.standard.string(forKey: customUAKey) != nil)
+            let title = isCurrent ? "✓ \(name)" : name
+            alert.addAction(UIAlertAction(title: title, style: .default) { _ in
+                if name == "自定义 UA" {
+                    self.showCustomUAInput()
+                } else {
+                    self.applyUA(ua, name: name)
+                }
+            })
         }
-        showToast("UA已切换：\(uaPresets[currentUAIndex].prefix(20))...")
-        currentWebView.reload()
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    
+    private func showCustomUAInput() {
+        let alert = UIAlertController(title: "自定义 UA", message: "输入自定义 User-Agent 字符串", preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.text = UserDefaults.standard.string(forKey: self.customUAKey)
+            tf.placeholder = "Mozilla/5.0 ..."
+            tf.autocapitalizationType = .none
+            tf.autocorrectionType = .no
+        }
+        alert.addAction(UIAlertAction(title: "应用", style: .default) { _ in
+            if let ua = alert.textFields?[0].text?.trimmingCharacters(in: .whitespaces), !ua.isEmpty {
+                UserDefaults.standard.set(ua, forKey: self.customUAKey)
+                self.applyUA(ua, name: "自定义 UA")
+            }
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    
+    private func applyUA(_ ua: String, name: String) {
+        for wv in self.webViews {
+            wv.customUserAgent = ua
+        }
+        self.showToast("UA已切换：\(name)")
+        self.currentWebView.reload()
     }
     
     @objc private func edgeMenuManageAdBlock() {
@@ -1395,7 +1599,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     
     private func setEdgeMenu(open: Bool) {
         edgeMenuIsOpen = open
-        let menuWidth = view.bounds.width * 0.25
+        let menuWidth = view.bounds.width * 0.40
         edgeMenuLeadingConstraint.constant = open ? -menuWidth : 0
         if open {
             edgeMenuOverlay.isHidden = false
@@ -2520,7 +2724,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         let location = gesture.location(in: view)
         let translation = gesture.translation(in: view)
         let velocity = gesture.velocity(in: view)
-        let menuWidth = view.bounds.width * 0.25
+        let menuWidth = view.bounds.width * 0.40
         // 右边缘检测区域
         let edgeThreshold: CGFloat = 60
         // 触发阈值：水平偏移15pt + 垂直下滑10pt 同时满足
