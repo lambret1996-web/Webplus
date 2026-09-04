@@ -71,7 +71,7 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
     private var session: URLSession!
     private var tasks: [String: DownloadTask] = [:]
     private var urlSessionTasks: [String: URLSessionDownloadTask] = [:]
-    private var wkDownloads: [String: WKDownload] = [:]
+    private var wkDownloads: [String: Any] = [:]
     private var wkProgressObservers: [String: NSKeyValueObservation] = [:]
     private var wkDestinationURLs: [String: URL] = [:]
     private let taskQueue = DispatchQueue(label: "download.manager.queue")
@@ -333,14 +333,16 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
         }
     }
     // MARK: - WKDownload 支持
+    @available(iOS 15.0, *)
     func setDestinationURL(_ url: URL, for download: WKDownload) {
         taskQueue.sync {
-            if let id = wkDownloads.first(where: { $0.value === download })?.key {
+            if let id = wkDownloads.first(where: { ($0.value as? WKDownload) === download })?.key {
                 wkDestinationURLs[id] = url
             }
         }
     }
     
+    @available(iOS 15.0, *)
     func startWKDownload(download: WKDownload, url: String, fileName: String, fileSize: Int64, mimeType: String) {
         let id = UUID().uuidString
         taskQueue.sync {
@@ -380,6 +382,7 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
         }
     }
     
+    @available(iOS 15.0, *)
     func completeWKDownload(download: WKDownload) {
         taskQueue.sync {
             // 找到对应的任务
@@ -414,6 +417,7 @@ class DownloadManager: NSObject, URLSessionDownloadDelegate {
         }
     }
     
+    @available(iOS 15.0, *)
     func failWKDownload(download: WKDownload, error: Error) {
         taskQueue.sync {
             guard let id = wkDownloads.first(where: { $0.value === download })?.key else { return }

@@ -13,7 +13,7 @@ import CoreMotion
 import Contacts
 import EventKit
 import AppTrackingTransparency
-class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, UIScrollViewDelegate, UITextFieldDelegate {
+class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UIScrollViewDelegate, UITextFieldDelegate {
     // MARK: - 配置项
     private var windowTitles: [String] = ["GitHub", "CF", "Google", "YouTube"]
     private var windowURLs: [String] = [
@@ -2733,7 +2733,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
             group.leave()
         }
         group.notify(queue: .main) {
-            let summary = results.joined(separator: "\n")
+            let summary = results.joined(separator: "\n
             let resultAlert = UIAlertController(title: "权限申请结果", message: summary, preferredStyle: .alert)
             resultAlert.addAction(UIAlertAction(title: "确定", style: .default))
             self.present(resultAlert, animated: true)
@@ -3591,8 +3591,14 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
         let response = navigationResponse.response
         let fileName = response.suggestedFilename ?? downloadURL.lastPathComponent
         let mime = response.mimeType ?? ""
-        // 使用WKWebView原生下载，保留完整请求上下文（Cookie、认证、重定向）
-        decisionHandler(.download)
+        if #available(iOS 15.0, *) {
+            // iOS 15+：使用WKWebView原生下载，保留完整请求上下文（Cookie、认证、重定向）
+            decisionHandler(.download)
+        } else {
+            // iOS 14及以下：使用URLSession下载
+            decisionHandler(.cancel)
+            DownloadManager.shared.startDownload(url: downloadURL.absoluteString, fileName: fileName, mimeType: mime)
+        }
     }
     // MARK: - WKNavigationDelegate
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -3816,7 +3822,10 @@ extension ViewController: UIGestureRecognizerDelegate {
             }
         }
     }
-    // MARK: - WKDownloadDelegate
+
+// MARK: - WKDownloadDelegate (iOS 15+)
+@available(iOS 15.0, *)
+extension ViewController: WKDownloadDelegate {
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
         download.delegate = self
         // 记录下载任务
@@ -3874,7 +3883,10 @@ extension ViewController: UIGestureRecognizerDelegate {
         DispatchQueue.main.async {
             self.showToast("下载失败：\(error.localizedDescription)")
         }
+}
     }
 
+
+}
 
 }
