@@ -1,5 +1,6 @@
 import UIKit
 import WebKit
+import NetworkExtension
 import AVFoundation
 import Photos
 import CoreLocation
