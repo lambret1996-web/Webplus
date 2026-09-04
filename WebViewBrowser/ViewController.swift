@@ -900,6 +900,18 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         // 合并内置黑名单 + 用户自定义域名
         let allDomains = adDomains + customAdDomains
         for domain in allDomains {
+            // 图片拦截规则：使用if-domain，在指定网站拦截所有图片（含第三方）
+            if isImageBlockRule(domain), let host = imageBlockDomain(from: domain) {
+                rules.append([
+                    "trigger": [
+                        "resource-type": ["image"],
+                        "if-domain": [host]
+                    ],
+                    "action": ["type": "block"]
+                ])
+                continue
+            }
+            // 普通域名规则
             rules.append([
                 "trigger": [
                     "url-filter": domain,
@@ -1362,6 +1374,22 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     /// 编辑已有域名规则
     private func showEditDomainAlert(at index: Int, original: String, readable: String) {
+        // 图片拦截规则不允许编辑，只允许删除
+        if isImageBlockRule(original) {
+            let alert = UIAlertController(title: "全站图片拦截", message: "\(readable)\n\n此规则为一键生成，仅支持删除", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "删除此规则", style: .destructive) { _ in
+                self.customAdDomains.remove(at: index)
+                UserDefaults.standard.set(self.customAdDomains, forKey: self.customAdDomainsKey)
+                self.compileAdBlockRules()
+                self.showToast("已删除图片拦截规则")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.showCustomAdManager() }
+            })
+            alert.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in
+                self.showCustomAdManager()
+            })
+            present(alert, animated: true)
+            return
+        }
         let alert = UIAlertController(title: "编辑规则", message: "修改后将替换原规则", preferredStyle: .alert)
         alert.addTextField { tf in
             tf.text = readable
