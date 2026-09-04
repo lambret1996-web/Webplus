@@ -188,7 +188,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
           echo "Extension构建完成"
-          find ~/Library/Developer/Xcode/DerivedData -name "*.appex" -type d 2>/dev/null | head -5 || true
+          find build -name "*.appex" -type d 2>/dev/null | head -5 || true
 
       - name: Archive (Signed)
         if: steps.detect.outputs.has_cert == 'true'
@@ -211,8 +211,11 @@ jobs:
           PLUGINS_DIR="${APP_PATH}/PlugIns"
           mkdir -p "${PLUGINS_DIR}"
           
-          # 查找构建好的Extension
-          EXTENSION_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "AppProxyExtension.appex" -type d 2>/dev/null | head -1)
+          # 查找构建好的Extension（在build目录和DerivedData中搜索）
+          EXTENSION_PATH=$(find build ~/Library/Developer/Xcode/DerivedData -name "AppProxyExtension.appex" -type d 2>/dev/null | head -1)
+          echo "查找Extension路径: $EXTENSION_PATH"
+          echo "build目录内容:"
+          find build -name "*.appex" -type d 2>/dev/null || true
           if [ -n "$EXTENSION_PATH" ] && [ -d "$EXTENSION_PATH" ]; then
             echo "找到Extension: $EXTENSION_PATH"
             cp -R "$EXTENSION_PATH" "${PLUGINS_DIR}/"
