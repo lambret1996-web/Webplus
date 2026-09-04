@@ -1249,6 +1249,15 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             UserDefaults.standard.set(!current, forKey: self.loginConfirmKey)
             self.showToast(!current ? "登录跳转确认已开启" : "已开启静默跳转")
         })
+        // 一键拦截当前网站图片
+        if let host = self.currentWebView.url?.host {
+            let imageRule = self.imageBlockRule(for: host)
+            let isBlocking = self.customAdDomains.contains(imageRule)
+            let imageTitle = isBlocking ? "🖼 拦截本站图片：已开启（点击关闭）" : "🖼 一键拦截本站所有图片"
+            alert.addAction(UIAlertAction(title: imageTitle, style: .default) { _ in
+                self.toggleImageBlock(for: host)
+            })
+        }
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         if let popover = alert.popoverPresentationController {
             popover.sourceView = translateButton
@@ -1266,6 +1275,33 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // MARK: - 自定义广告域名管理
     private func manageCustomAdDomains() {
         showCustomAdManager()
+    }
+    // MARK: - 一键拦截当前网站所有图片（第一方+第三方）
+    private let imageBlockPrefix = "__image_block__"
+    private func imageBlockRule(for host: String) -> String {
+        return imageBlockPrefix + host
+    }
+    private func isImageBlockRule(_ rule: String) -> Bool {
+        return rule.hasPrefix(imageBlockPrefix)
+    }
+    private func imageBlockDomain(from rule: String) -> String? {
+        guard rule.hasPrefix(imageBlockPrefix) else { return nil }
+        return String(rule.dropFirst(imageBlockPrefix.count))
+    }
+    private func toggleImageBlock(for host: String) {
+        let rule = imageBlockRule(for: host)
+        if let index = customAdDomains.firstIndex(of: rule) {
+            customAdDomains.remove(at: index)
+            UserDefaults.standard.set(customAdDomains, forKey: customAdDomainsKey)
+            compileAdBlockRules()
+            showToast("已关闭本站图片拦截")
+        } else {
+            customAdDomains.append(rule)
+            UserDefaults.standard.set(customAdDomains, forKey: customAdDomainsKey)
+            compileAdBlockRules()
+            showToast("已开启全站图片拦截（含第三方广告图），刷新后生效")
+            currentWebView.reload()
+        }
     }
     /// 统一的自定义黑名单管理界面：列表+添加+删除+清空
     private func showCustomAdManager() {
