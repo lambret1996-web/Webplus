@@ -79,6 +79,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var browserHistory: [[String: String]] {
         get { UserDefaults.standard.array(forKey: historyKey) as? [[String: String]] ?? [] }
         set { UserDefaults.standard.set(newValue, forKey: historyKey) }
+    }
+    // 圈X导入的广告域名（与手动添加的分开管理）
+    private let importedAdDomainsKey = "importedAdDomains"
+    private var importedAdDomains: [String] {
+        get { UserDefaults.standard.array(forKey: importedAdDomainsKey) as? [String] ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: importedAdDomainsKey) }
     } 
     /// 自定义下拉刷新
     private var refreshViews: [UIView] = []
