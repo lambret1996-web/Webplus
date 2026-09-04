@@ -1259,12 +1259,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private func showCustomAdManager() {
         let alert = UIAlertController(
             title: "自定义广告黑名单",
-            message: "共 \(customAdDomains.count) 条，点击域名可删除",
+            message: "共 \(customAdDomains.count) 条，支持域名/完整路径/通配符*",
             preferredStyle: .actionSheet
         )
         // 域名列表（显示可读格式，点击删除）
         for (i, domain) in customAdDomains.enumerated() {
-            let readable = domain.replacingOccurrences(of: "\\.", with: ".")
+            let readable = domain.replacingOccurrences(of: "\\.", with: ".").replacingOccurrences(of: ".*", with: "*")
             alert.addAction(UIAlertAction(title: "🗑 \(readable)", style: .destructive) { _ in
                 self.customAdDomains.remove(at: i)
                 UserDefaults.standard.set(self.customAdDomains, forKey: self.customAdDomainsKey)
@@ -1305,7 +1305,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private func showAddDomainAlert() {
         let alert = UIAlertController(title: "添加域名", message: "可直接粘贴完整URL，自动清洗", preferredStyle: .alert)
         alert.addTextField { tf in
-            tf.placeholder = "输入域名或完整URL"
+            tf.placeholder = "域名或完整URL，如 ads.com/track/*"
             tf.font = .systemFont(ofSize: 14)
             tf.autocapitalizationType = .none
             tf.autocorrectionType = .no
@@ -1317,32 +1317,48 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 self.showCustomAdManager()
                 return
             }
-            // 智能清洗
-            var domain = input.lowercased()
-            domain = domain.replacingOccurrences(of: "https://", with: "")
-            domain = domain.replacingOccurrences(of: "http://", with: "")
-            if domain.hasPrefix("www.") { domain = String(domain.dropFirst(4)) }
-            if let slashRange = domain.range(of: "/") { domain = String(domain[..<slashRange.lowerBound]) }
-            if let colonRange = domain.range(of: ":") { domain = String(domain[..<colonRange.lowerBound]) }
-            domain = domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            guard domain.contains(".") else {
-                self.showToast("无效域名，请输入如 example.com")
+            // 智能解析：支持纯域名 和 域名+完整路径
+            var raw = input.lowercased()
+            raw = raw.replacingOccurrences(of: "https://", with: "")
+            raw = raw.replacingOccurrences(of: "http://", with: "")
+            if raw.hasPrefix("www.") { raw = String(raw.dropFirst(4)) }
+            // 去掉端口号（域名后的:端口）
+            if let colonRange = raw.range(of: ":"), let slashRange = raw.range(of: "/") {
+                if colonRange.lowerBound < slashRange.lowerBound {
+                    raw = String(raw[..<colonRange.lowerBound]) + String(raw[slashRange.lowerBound...])
+                }
+            }
+            raw = raw.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            // 分离域名和路径
+            var domainPart = raw
+            var pathPart = ""
+            if let slashRange = raw.range(of: "/") {
+                domainPart = String(raw[..<slashRange.lowerBound])
+                pathPart = String(raw[slashRange.lowerBound...])
+            }
+            guard domainPart.contains(".") else {
+                self.showToast("无效输入，请输入域名或完整URL")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.showAddDomainAlert() }
                 return
             }
-            if !domain.contains("\\.") {
-                domain = domain.replacingOccurrences(of: ".", with: "\\.")
+            // 转义域名中的点号
+            domainPart = domainPart.replacingOccurrences(of: ".", with: "\\.")
+            // 路径中的通配符*转换为正则.*，点号转义
+            if !pathPart.isEmpty {
+                pathPart = pathPart.replacingOccurrences(of: ".", with: "\\.")
+                pathPart = pathPart.replacingOccurrences(of: "*", with: ".*")
             }
-            if !self.customAdDomains.contains(domain) {
-                self.customAdDomains.append(domain)
+            // 组合最终正则：域名 + 路径（如有）
+            let finalRule = domainPart + pathPart
+            if !self.customAdDomains.contains(finalRule) {
+                self.customAdDomains.append(finalRule)
                 UserDefaults.standard.set(self.customAdDomains, forKey: self.customAdDomainsKey)
                 self.compileAdBlockRules()
-                let readable = domain.replacingOccurrences(of: "\\.", with: ".")
+                let readable = finalRule.replacingOccurrences(of: "\\.", with: ".").replacingOccurrences(of: ".*", with: "*")
                 self.showToast("已添加：\(readable)")
             } else {
-                self.showToast("该域名已存在")
+                self.showToast("该规则已存在")
             }
-            // 添加后返回管理界面
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 self.showCustomAdManager()
             }
