@@ -69,6 +69,14 @@ class DownloadPanelViewController: UIViewController {
         editButton.addTarget(self, action: #selector(toggleEdit), for: .touchUpInside)
         view.addSubview(editButton)
         
+        // 打开文件夹按钮
+        let folderBtn = UIButton(type: .system)
+        folderBtn.setImage(UIImage(systemName: "folder"), for: .normal)
+        folderBtn.tintColor = .systemBlue
+        folderBtn.translatesAutoresizingMaskIntoConstraints = false
+        folderBtn.addTarget(self, action: #selector(openDownloadsFolder), for: .touchUpInside)
+        view.addSubview(folderBtn)
+        
         // 关闭按钮
         let closeBtn = UIButton(type: .system)
         closeBtn.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)

@@ -146,6 +146,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         setupEdgeMenu()
         switchToTab(index: 0)
         loadInitialPages()
+        // 预创建下载文件夹，确保在Files App中可见
+        createDownloadsFolder()
         // 下载管理回调
         DownloadManager.shared.onProgress = { [weak self] _ in
             DispatchQueue.main.async { self?.updateDownloadBadge() }
