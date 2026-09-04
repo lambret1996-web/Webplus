@@ -938,8 +938,15 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 return
             }
             DispatchQueue.main.async {
-                for wv in self?.webViews ?? [] {
+                guard let self = self else { return }
+                for wv in self.webViews {
+                    // 先移除旧规则，再添加新规则
+                    wv.configuration.userContentController.removeAllContentRuleLists()
                     wv.configuration.userContentController.add(ruleList)
+                }
+                // 规则更新后重新加载当前页面，确保立即生效
+                if self.currentWebView.url != nil {
+                    self.currentWebView.reload()
                 }
             }
         }
@@ -1016,8 +1023,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         ])
     }
     private func setupWebViews() {
-        // 编译广告拦截规则（异步，不阻塞启动）
-        compileAdBlockRules()
         for i in 0..<windowTitles.count {
             let config = WKWebViewConfiguration()
             config.allowsInlineMediaPlayback = true
@@ -1060,6 +1065,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             webViews.append(webView)
             setupCustomRefresh(for: webView, index: i)
         }
+        // webView全部创建完成后，编译广告拦截规则
+        compileAdBlockRules()
     }
     /// 自定义下拉刷新（触发距离120pt，避免误触）
     private func setupCustomRefresh(for webView: WKWebView, index: Int) {
@@ -1253,6 +1260,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         alert.addAction(UIAlertAction(title: globalImageTitle, style: .default) { _ in
             self.toggleGlobalImageBlock()
         })
+        // 四级缓存管理
+        alert.addAction(UIAlertAction(title: "💾 缓存管理（四级缓存）", style: .default) { _ in
+            self.showCacheManager()
+        })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         if let popover = alert.popoverPresentationController {
             popover.sourceView = translateButton
@@ -1282,6 +1293,48 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         } else {
             showToast("已关闭全局图片拦截")
         }
+    }
+    // MARK: - 四级缓存管理
+    private func showCacheManager() {
+        let sizes = FourLevelCache.shared.cacheSize()
+        let tempMB = Double(sizes.temp) / 1024 / 1024
+        let staticMB = Double(sizes.static) / 1024 / 1024
+        let alert = UIAlertController(
+            title: "💾 四级缓存管理",
+            message: String(format: "一级内存：80MB上限
+二级瞬时缓存：%.1fMB（30分钟过期）
+三级持久缓存：%.1fMB（7天过期）", tempMB, staticMB),
+            preferredStyle: .actionSheet
+        )
+        alert.addAction(UIAlertAction(title: "🗑 清理全部缓存", style: .destructive) { _ in
+            FourLevelCache.shared.removeAllCachedResponses()
+            self.showToast("已清理全部四级缓存")
+        })
+        alert.addAction(UIAlertAction(title: "⚡ 仅清理内存缓存", style: .default) { _ in
+            FourLevelCache.shared.clearMemoryCache()
+            self.showToast("已清理一级内存缓存")
+        })
+        alert.addAction(UIAlertAction(title: "📄 仅清理动态页面缓存", style: .default) { _ in
+            FourLevelCache.shared.clearTempCache()
+            self.showToast("已清理二级瞬时缓存")
+        })
+        alert.addAction(UIAlertAction(title: "🖼 仅清理静态资源缓存", style: .default) { _ in
+            FourLevelCache.shared.clearStaticCache()
+            self.showToast("已清理三级持久缓存")
+        })
+        if let host = currentWebView.url?.host {
+            alert.addAction(UIAlertAction(title: "📍 清理当前站点缓存（\(host)）", style: .default) { _ in
+                FourLevelCache.shared.clearCacheForSite(host)
+                self.showToast("已清理 \(host) 缓存")
+                self.currentWebView.reload()
+            })
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = translateButton
+            popover.sourceRect = translateButton.bounds
+        }
+        present(alert, animated: true)
     }
     /// 统一的自定义黑名单管理界面：列表+添加+删除+清空
     private func showCustomAdManager() {
