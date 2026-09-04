@@ -177,16 +177,15 @@ jobs:
       - name: Build Extension (Signed)
         if: steps.detect.outputs.has_cert == 'true'
         run: |
-          # 先构建Extension target
+          # 先构建Extension target（不签名，后续统一签名）
           xcodebuild \
             -project "${APP_NAME}.xcodeproj" \
             -target AppProxyExtension \
             -configuration "${BUILD_CONFIG}" \
             -sdk iphoneos \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM="${{ env.TEAM_ID }}" \
-            PROVISIONING_PROFILE_SPECIFIER="${{ env.PROFILE_UUID }}" \
-            CODE_SIGN_IDENTITY="iPhone Distribution" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
             build
           echo "Extension构建完成"
           find ~/Library/Developer/Xcode/DerivedData -name "*.appex" -type d 2>/dev/null | head -5 || true
