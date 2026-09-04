@@ -3701,7 +3701,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 DispatchQueue.main.async {
                     self.showToast("图片保存失败")
                 }
-        }
+            }
+        }.resume()
     }
 }
 // MARK: - UIGestureRecognizerDelegate
@@ -3754,7 +3755,6 @@ extension ViewController: UIGestureRecognizerDelegate {
         }
     }
 
-    }
     
     @objc private func imageSaved(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer) {
         DispatchQueue.main.async {
