@@ -3657,6 +3657,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     deinit {
         for webView in webViews {
             webView.removeObserver(self, forKeyPath: #keyPath(WKWebView.estimatedProgress))
+        }
+    }
     // MARK: - 图片长按菜单
     @objc private func handleImageLongPress(_ gesture: UILongPressGestureRecognizer) {
         guard gesture.state == .began, let webView = gesture.view as? WKWebView else { return }
@@ -3756,9 +3758,6 @@ extension ViewController: UIGestureRecognizerDelegate {
         }
     }
 
-
-            }
-        }.resume()
     }
     
     @objc private func imageSaved(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer) {
@@ -3770,5 +3769,6 @@ extension ViewController: UIGestureRecognizerDelegate {
             }
         }
     }
+
 
 
