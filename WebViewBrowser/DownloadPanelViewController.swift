@@ -439,4 +439,28 @@ extension UITableView {
         backgroundView = nil
         separatorStyle = .singleLine
     }
+    @objc private func openDownloadsFolder() {
+        let fileManager = FileManager.default
+        guard let docsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let downloadsDir = docsDir.appendingPathComponent("Downloads", isDirectory: true)
+        if !fileManager.fileExists(atPath: downloadsDir.path) {
+            try? fileManager.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+        }
+        let url = URL(string: "shareddocuments://\(downloadsDir.path)")!
+        if UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url, options: [:]) { success in
+                if !success {
+                    let alert = UIAlertController(title: "下载路径", message: "文件App → 我的iPhone → 轻浏览 → Downloads", preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "知道了", style: .default))
+                    self.present(alert, animated: true)
+                }
+            }
+        } else {
+            let alert = UIAlertController(title: "下载路径", message: "文件App → 我的iPhone → 轻浏览 → Downloads", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "知道了", style: .default))
+            present(alert, animated: true)
+        }
+    }
+
+
 }

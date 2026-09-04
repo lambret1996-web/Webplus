@@ -3810,4 +3810,38 @@ extension ViewController: UIGestureRecognizerDelegate {
         // 普通水平滑动手势（前进/后退）
         return abs(velocity.x) > abs(velocity.y) * 1.2
     }
+    // MARK: - 下载文件夹管理
+    private func createDownloadsFolder() {
+        let fileManager = FileManager.default
+        guard let docsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let downloadsDir = docsDir.appendingPathComponent("Downloads", isDirectory: true)
+        if !fileManager.fileExists(atPath: downloadsDir.path) {
+            do {
+                try fileManager.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+            } catch {
+                print("创建Downloads文件夹失败: \(error)")
+            }
+        }
+    }
+    
+    @objc private func openDownloadsFolder() {
+        let fileManager = FileManager.default
+        guard let docsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let downloadsDir = docsDir.appendingPathComponent("Downloads", isDirectory: true)
+        if !fileManager.fileExists(atPath: downloadsDir.path) {
+            try? fileManager.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+        }
+        let url = URL(string: "shareddocuments://\(downloadsDir.path)")!
+        if UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url, options: [:]) { success in
+                if !success {
+                    self.showToast("文件App → 我的iPhone → 轻浏览 → Downloads")
+                }
+            }
+        } else {
+            showToast("文件App → 我的iPhone → 轻浏览 → Downloads")
+        }
+    }
+
+
 }
