@@ -1187,10 +1187,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // MARK: - 右边缘下滑功能菜单
     private func setupEdgeMenu() {
         // 菜单宽度：60%（约220pt），减少对网页内容遮挡
-        let menuWidth = view.bounds.width * 0.60
+        let menuWidth = view.bounds.width * 0.25
         // 遮罩层：点击菜单外任意区域收回菜单
         edgeMenuOverlay = UIButton(type: .system)
-        edgeMenuOverlay.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+        edgeMenuOverlay.backgroundColor = UIColor.black.withAlphaComponent(0.10)
         edgeMenuOverlay.alpha = 0
         edgeMenuOverlay.isHidden = true
         edgeMenuOverlay.addTarget(self, action: #selector(closeEdgeMenu), for: .touchUpInside)
@@ -1395,13 +1395,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     
     private func setEdgeMenu(open: Bool) {
         edgeMenuIsOpen = open
-        let menuWidth = view.bounds.width * 0.60
+        let menuWidth = view.bounds.width * 0.25
         edgeMenuLeadingConstraint.constant = open ? -menuWidth : 0
         if open {
             edgeMenuOverlay.isHidden = false
         }
-        UIView.animate(withDuration: open ? 0.35 : 0.2, delay: 0,
-                       usingSpringWithDamping: open ? 0.72 : 1.0,
+        UIView.animate(withDuration: open ? 0.2 : 0.2, delay: 0,
+                       usingSpringWithDamping: open ? 0.5 : 1.0,
                        initialSpringVelocity: open ? 0.8 : 0,
                        options: .curveEaseInOut) {
             self.edgeMenuOverlay.alpha = open ? 1 : 0
@@ -2520,61 +2520,54 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         let location = gesture.location(in: view)
         let translation = gesture.translation(in: view)
         let velocity = gesture.velocity(in: view)
-        let menuWidth = view.bounds.width * 0.75
-        let edgeThreshold: CGFloat = 44
-        let horizontalThreshold: CGFloat = 30
-        let triggerThreshold: CGFloat = 20
-        let openThreshold: CGFloat = 60
-        let fastVelocity: CGFloat = 500
-        
+        let menuWidth = view.bounds.width * 0.25
+        // 右边缘检测区域
+        let edgeThreshold: CGFloat = 60
+        // 触发阈值：水平偏移15pt + 垂直下滑10pt 同时满足
+        let horizontalThreshold: CGFloat = 15
+        let triggerThreshold: CGFloat = 10
+        // 左滑收起阈值
+        let closeThreshold: CGFloat = 45
+        let fastVelocity: CGFloat = 400
+
         switch gesture.state {
         case .began:
             // 检查起始点是否在右边缘
             if view.bounds.width - location.x <= edgeThreshold {
                 edgeMenuStartX = edgeMenuLeadingConstraint.constant
                 edgeMenuPanStart = location
+                edgeMenuDidTrigger = false
             } else {
                 gesture.isEnabled = false
                 gesture.isEnabled = true
             }
         case .changed:
-            // 检查是否满足触发条件
             let dx = edgeMenuPanStart.x - location.x // 向左为正
             let dy = location.y - edgeMenuPanStart.y // 向下为正
-            
-            if !edgeMenuIsOpen && dx >= horizontalThreshold && dy >= triggerThreshold {
-                // 跟手阶段：菜单从右侧滑入
-                let progress = min(dy / 200, 1.0)
-                edgeMenuLeadingConstraint.constant = -menuWidth * progress
-            } else if edgeMenuIsOpen {
-                // 菜单已打开，左滑收起
-                let progress = min(max(-translation.x / menuWidth, 0), 1)
-                edgeMenuLeadingConstraint.constant = -menuWidth + menuWidth * progress
-            }
-        case .ended:
-            let dy = location.y - edgeMenuPanStart.y
-            let dx = edgeMenuPanStart.x - location.x
-            
-            if !edgeMenuIsOpen {
-                // 快速下滑或下滑距离足够→展开
-                if velocity.y > fastVelocity || (dx >= horizontalThreshold && dy >= openThreshold) {
-                    setEdgeMenu(open: true)
-                } else {
+
+            if edgeMenuIsOpen {
+                // 菜单已打开：左滑超过阈值立即收起
+                if translation.x > closeThreshold || velocity.x > fastVelocity {
+                    edgeMenuDidTrigger = true
                     setEdgeMenu(open: false)
+                    gesture.isEnabled = false
+                    gesture.isEnabled = true
                 }
             } else {
-                // 快速左滑或左滑距离足够→收起
-                if velocity.x < -fastVelocity || translation.x > openThreshold {
-                    setEdgeMenu(open: false)
-                } else {
+                // 确认右边缘下滑意图后立即快速弹出，不等用户画完手势
+                if !edgeMenuDidTrigger && dx >= horizontalThreshold && dy >= triggerThreshold {
+                    edgeMenuDidTrigger = true
                     setEdgeMenu(open: true)
+                    // 结束当前手势，由动画接管弹出
+                    gesture.isEnabled = false
+                    gesture.isEnabled = true
                 }
             }
         default:
             break
         }
     }
-    
+
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
         guard gesture.view === currentWebView else { return }
         let location = gesture.location(in: view)
