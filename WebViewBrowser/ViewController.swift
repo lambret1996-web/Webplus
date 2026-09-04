@@ -1301,9 +1301,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         let staticMB = Double(sizes.static) / 1024 / 1024
         let alert = UIAlertController(
             title: "💾 四级缓存管理",
-            message: String(format: "一级内存：80MB上限
-二级瞬时缓存：%.1fMB（30分钟过期）
-三级持久缓存：%.1fMB（7天过期）", tempMB, staticMB),
+            message: String(format: "一级内存：80MB上限\n二级瞬时缓存：%.1fMB（30分钟过期）\n三级持久缓存：%.1fMB（7天过期）", tempMB, staticMB),
             preferredStyle: .actionSheet
         )
         alert.addAction(UIAlertAction(title: "🗑 清理全部缓存", style: .destructive) { _ in
