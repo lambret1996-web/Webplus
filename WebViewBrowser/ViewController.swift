@@ -52,10 +52,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var panGestures: [UIPanGestureRecognizer] = []
     // 右边缘下滑功能菜单
     private var edgeMenuView: UIView!
+    private var edgeMenuOverlay: UIButton!
     private var edgeMenuLeadingConstraint: NSLayoutConstraint!
     private var edgeMenuIsOpen = false
     private var edgeMenuStartX: CGFloat = 0
     private var edgeMenuPanStart: CGPoint = .zero
+    private var edgeMenuDidTrigger = false
     /// 自定义下拉刷新
     private var refreshViews: [UIView] = []
     private var refreshIndicators: [UIActivityIndicatorView] = []
@@ -1184,15 +1186,28 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     // MARK: - 右边缘下滑功能菜单
     private func setupEdgeMenu() {
-        let menuWidth = view.bounds.width * 0.75
+        // 菜单宽度：60%（约220pt），减少对网页内容遮挡
+        let menuWidth = view.bounds.width * 0.60
+        // 遮罩层：点击菜单外任意区域收回菜单
+        edgeMenuOverlay = UIButton(type: .system)
+        edgeMenuOverlay.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+        edgeMenuOverlay.alpha = 0
+        edgeMenuOverlay.isHidden = true
+        edgeMenuOverlay.addTarget(self, action: #selector(closeEdgeMenu), for: .touchUpInside)
+        edgeMenuOverlay.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(edgeMenuOverlay)
+        NSLayoutConstraint.activate([
+            edgeMenuOverlay.topAnchor.constraint(equalTo: view.topAnchor),
+            edgeMenuOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            edgeMenuOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            edgeMenuOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
+        
+        // 菜单面板（无阴影，避免隐藏时边缘露线）
         edgeMenuView = UIView()
         edgeMenuView.backgroundColor = .systemBackground
         edgeMenuView.layer.cornerRadius = 16
         edgeMenuView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
-        edgeMenuView.layer.shadowColor = UIColor.black.cgColor
-        edgeMenuView.layer.shadowOpacity = 0.3
-        edgeMenuView.layer.shadowRadius = 10
-        edgeMenuView.layer.shadowOffset = CGSize(width: -5, height: 0)
         edgeMenuView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(edgeMenuView)
         
@@ -1248,7 +1263,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 button.topAnchor.constraint(equalTo: previousView.bottomAnchor, constant: previousView == titleLabel ? 20 : 0),
                 button.leadingAnchor.constraint(equalTo: edgeMenuView.leadingAnchor),
                 button.trailingAnchor.constraint(equalTo: edgeMenuView.trailingAnchor),
-                button.heightAnchor.constraint(equalToConstant: 52)
+                button.heightAnchor.constraint(equalToConstant: 48)
             ])
             previousView = button
         }
@@ -1380,10 +1395,19 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     
     private func setEdgeMenu(open: Bool) {
         edgeMenuIsOpen = open
-        let menuWidth = view.bounds.width * 0.75
+        let menuWidth = view.bounds.width * 0.60
         edgeMenuLeadingConstraint.constant = open ? -menuWidth : 0
-        UIView.animate(withDuration: open ? 0.3 : 0.25, delay: 0, usingSpringWithDamping: open ? 0.85 : 1.0, initialSpringVelocity: 0.5, options: .curveEaseInOut) {
+        if open {
+            edgeMenuOverlay.isHidden = false
+        }
+        UIView.animate(withDuration: open ? 0.35 : 0.2, delay: 0,
+                       usingSpringWithDamping: open ? 0.72 : 1.0,
+                       initialSpringVelocity: open ? 0.8 : 0,
+                       options: .curveEaseInOut) {
+            self.edgeMenuOverlay.alpha = open ? 1 : 0
             self.view.layoutIfNeeded()
+        } completion: { _ in
+            if !open { self.edgeMenuOverlay.isHidden = true }
         }
     }
     
