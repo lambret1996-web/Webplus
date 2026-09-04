@@ -462,21 +462,6 @@ extension UITableView {
         backgroundView = nil
         separatorStyle = .singleLine
     }
-        let url = URL(string: "shareddocuments://\(downloadsDir.path)")!
-        if UIApplication.shared.canOpenURL(url) {
-            UIApplication.shared.open(url, options: [:]) { success in
-                if !success {
-                    let alert = UIAlertController(title: "下载路径", message: "文件App → 我的iPhone → 轻浏览 → Downloads", preferredStyle: .alert)
-                    alert.addAction(UIAlertAction(title: "知道了", style: .default))
-                    self.present(alert, animated: true)
-                }
-            }
-        } else {
-            let alert = UIAlertController(title: "下载路径", message: "文件App → 我的iPhone → 轻浏览 → Downloads", preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "知道了", style: .default))
-            present(alert, animated: true)
-        }
-    }
 
 
 }
