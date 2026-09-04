@@ -69,6 +69,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var customAdDomains: [String] = []
     private let adBlockKey = "adBlockEnabled"
     private let customAdDomainsKey = "customAdDomains"
+    private let globalImageBlockKey = "globalImageBlock"
     // MARK: - UA切换
     private var currentUAIndex: Int = 0
     private let uaIndexKey = "currentUAIndex"
