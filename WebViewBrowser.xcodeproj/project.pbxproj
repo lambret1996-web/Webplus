@@ -14,6 +14,8 @@
 		DOWNLOADPANEL_ID /* DownloadPanelViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DOWNLOADPANEL_REF /* DownloadPanelViewController.swift */; };
 		FOURLEVELCACHE_ID /* FourLevelCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FOURLEVELCACHE_REF /* FourLevelCache.swift */; };
 		THIRDPARTY_ID /* ThirdPartyLoginManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = THIRDPARTY_REF /* ThirdPartyLoginManager.swift */; };
+		APPPROXY_PROVIDER_BUILD /* AppProxyProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPPROXY_PROVIDER_REF /* AppProxyProvider.swift */; };
+		APPPROXY_EMBED /* AppProxyExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = APPPROXY_PRODUCT_REF /* AppProxyExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		ASSETS_ID /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = ASSETS_REF /* Assets.xcassets */; };
 		LAUNCHSCREEN_ID /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = LAUNCHSCREEN_REF /* LaunchScreen.storyboard */; };
 /* End PBXBuildFile section */
@@ -30,10 +32,22 @@
 		LAUNCHSCREEN_REF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		INFOPLIST_REF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		PRODUCT_REF /* WebViewBrowser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WebViewBrowser.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		APPPROXY_PROVIDER_REF /* AppProxyProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppProxyProvider.swift; sourceTree = "<group>"; };
+		APPPROXY_INFO_REF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		APPPROXY_ENTITLEMENTS_REF /* AppProxyExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AppProxyExtension.entitlements; sourceTree = "<group>"; };
+		MAIN_ENTITLEMENTS_REF /* WebViewBrowser.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WebViewBrowser.entitlements; sourceTree = "<group>"; };
+		APPPROXY_PRODUCT_REF /* AppProxyExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AppProxyExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		FRAMEWORKS_PHASE_ID /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+APPPROXY_FRAMEWORKS /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -72,6 +86,7 @@
 			isa = PBXGroup;
 			children = (
 				PRODUCT_REF /* WebViewBrowser.app */,
+				APPPROXY_PRODUCT_REF /* AppProxyExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -86,15 +101,33 @@
 				SOURCES_PHASE_ID /* Sources */,
 				FRAMEWORKS_PHASE_ID /* Frameworks */,
 				RESOURCES_PHASE_ID /* Resources */,
+				EMBED_APP_EXTENSIONS /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				APPPROXY_DEPENDENCY /* PBXTargetDependency */,
 			);
 			name = WebViewBrowser;
 			productName = WebViewBrowser;
 			productReference = PRODUCT_REF /* WebViewBrowser.app */;
 			productType = "com.apple.product-type.application";
+		};
+APPPROXY_TARGET /* AppProxyExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = APPPROXY_CONFIG_LIST /* Build configuration list for PBXNativeTarget "AppProxyExtension" */;
+			buildPhases = (
+				APPPROXY_SOURCES /* Sources */,
+				APPPROXY_FRAMEWORKS /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AppProxyExtension;
+			productName = AppProxyExtension;
+			productReference = APPPROXY_PRODUCT_REF /* AppProxyExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -153,6 +186,14 @@
 				THIRDPARTY_ID /* ThirdPartyLoginManager.swift in Sources */,
 				SCENEDELEGATE_ID /* SceneDelegate.swift in Sources */,
 				VIEWCONTROLLER_ID /* ViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+APPPROXY_SOURCES /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				APPPROXY_PROVIDER_BUILD /* AppProxyProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -328,6 +369,52 @@
 			};
 			name = Release;
 		};
+APPPROXY_DEBUG /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = AppProxyExtension/AppProxyExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 13.9;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AppProxyExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 13.9;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lambret.webplus.AppProxyExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		APPPROXY_RELEASE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = AppProxyExtension/AppProxyExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 13.9;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AppProxyExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 13.9;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lambret.webplus.AppProxyExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -345,6 +432,15 @@
 			buildConfigurations = (
 				DEBUG_TARGET_CONFIG /* Debug */,
 				RELEASE_TARGET_CONFIG /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+APPPROXY_CONFIG_LIST /* Build configuration list for PBXNativeTarget "AppProxyExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				APPPROXY_DEBUG /* Debug */,
+				APPPROXY_RELEASE /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

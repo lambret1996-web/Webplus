@@ -85,7 +85,14 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var importedAdDomains: [String] {
         get { UserDefaults.standard.array(forKey: importedAdDomainsKey) as? [String] ?? [] }
         set { UserDefaults.standard.set(newValue, forKey: importedAdDomainsKey) }
-    } 
+    }
+    // App-Proxy 代理控制
+    private let proxyExcludeKey = "proxyExcludeDomains"
+    private var proxyExcludeDomains: String {
+        get { UserDefaults.standard.string(forKey: proxyExcludeKey) ?? "github.com,cloudflare.com" }
+        set { UserDefaults.standard.set(newValue, forKey: proxyExcludeKey) }
+    }
+    private var proxyStatsTimer: Timer? 
     /// 自定义下拉刷新
     private var refreshViews: [UIView] = []
     private var refreshIndicators: [UIActivityIndicatorView] = []
@@ -1282,6 +1289,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             ("hand.raised", "广告黑名单", #selector(edgeMenuManageAdBlock)),
             ("trash", "清空站点缓存", #selector(edgeMenuClearSiteCache)),
             ("trash.fill", "一键清空缓存", #selector(edgeMenuClearAllCache)),
+            ("network", "高级代理(AppProxy)", #selector(edgeMenuShowProxy)),
             ("gear", "设置", #selector(edgeMenuShowSettings))
         ]
         // 读取保存的排序
