@@ -12,6 +12,7 @@
 		SCENEDELEGATE_ID /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = SCENEDELEGATE_REF /* SceneDelegate.swift */; };
 		DOWNLOADMANAGER_ID /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DOWNLOADMANAGER_REF /* DownloadManager.swift */; };
 		DOWNLOADPANEL_ID /* DownloadPanelViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DOWNLOADPANEL_REF /* DownloadPanelViewController.swift */; };
+		396E10F336D495F724EDF5F7 /* FourLevelCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 396E10F336D495F724EDF5F7 /* FourLevelCache.swift */;};
 		THIRDPARTY_ID /* ThirdPartyLoginManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = THIRDPARTY_REF /* ThirdPartyLoginManager.swift */; };
 		ASSETS_ID /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = ASSETS_REF /* Assets.xcassets */; };
 		LAUNCHSCREEN_ID /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = LAUNCHSCREEN_REF /* LaunchScreen.storyboard */; };
@@ -23,6 +24,7 @@
 		SCENEDELEGATE_REF /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		DOWNLOADMANAGER_REF /* DownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManager.swift; sourceTree = "<group>"; };
 		DOWNLOADPANEL_REF /* DownloadPanelViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadPanelViewController.swift; sourceTree = "<group>"; };
+		396E10F336D495F724EDF5F7 /* FourLevelCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FourLevelCache.swift; sourceTree = "<group>";};
 		THIRDPARTY_REF /* ThirdPartyLoginManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThirdPartyLoginManager.swift; sourceTree = "<group>"; };
 		ASSETS_REF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		LAUNCHSCREEN_REF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -55,6 +57,7 @@
 				APPDELEGATE_REF /* AppDelegate.swift */,
 				DOWNLOADMANAGER_REF /* DownloadManager.swift */,
 				DOWNLOADPANEL_REF /* DownloadPanelViewController.swift */,
+				396E10F336D495F724EDF5F7 /* FourLevelCache.swift */,
 				THIRDPARTY_REF /* ThirdPartyLoginManager.swift */,
 				SCENEDELEGATE_REF /* SceneDelegate.swift */,
 				VIEWCONTROLLER_REF /* ViewController.swift */,
@@ -146,6 +149,7 @@
 				APPDELEGATE_ID /* AppDelegate.swift in Sources */,
 				DOWNLOADMANAGER_ID /* DownloadManager.swift in Sources */,
 				DOWNLOADPANEL_ID /* DownloadPanelViewController.swift in Sources */,
+				396E10F336D495F724EDF5F7 /* FourLevelCache.swift in Sources */,
 				THIRDPARTY_ID /* ThirdPartyLoginManager.swift in Sources */,
 				SCENEDELEGATE_ID /* SceneDelegate.swift in Sources */,
 				VIEWCONTROLLER_ID /* ViewController.swift in Sources */,
