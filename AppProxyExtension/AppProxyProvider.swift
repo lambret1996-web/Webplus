@@ -206,7 +206,7 @@ class AppProxyProvider: NEAppProxyProvider {
     }
     
     func saveStats() {
-        let defaults = UserDefaults(suiteName: "group.com.lambret.webplus")
+        let defaults = UserDefaults(suiteName: "group.ab6938971b3fa793.1")
         defaults?.set(Stats.totalRequests, forKey: "totalRequests")
         defaults?.set(Stats.blocked, forKey: "blocked")
         defaults?.set(Stats.redirected, forKey: "redirected")

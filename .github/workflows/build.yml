@@ -21,6 +21,7 @@ env:
   APP_NAME: WebViewBrowser
   SCHEME: WebViewBrowser
   BUILD_CONFIG: Release
+  TEAM_ID: FTL7Y6J897
 
 jobs:
   build:
@@ -64,7 +65,7 @@ jobs:
           xcodebuild -list -project "${APP_NAME}.xcodeproj"
 
       # ============================================================
-      # 无签名构建 + 手动 ad-hoc 签名（默认，无需证书）
+      # 无签名构建（默认，无需证书）
       # ============================================================
       - name: Build (Unsigned)
         if: steps.detect.outputs.has_cert == 'false'
@@ -81,7 +82,7 @@ jobs:
             ONLY_ACTIVE_ARCH=NO \
             clean build
 
-      - name: Package IPA
+      - name: Package IPA (Unsigned)
         if: steps.detect.outputs.has_cert == 'false'
         run: |
           APP_PATH="build/Build/Products/${BUILD_CONFIG}-iphoneos/${APP_NAME}.app"
@@ -90,18 +91,8 @@ jobs:
             ls -la build/Build/Products/ || true
             exit 1
           fi
-          # 确保二进制文件有执行权限
           chmod +x "$APP_PATH/${APP_NAME}"
-          # 手动 ad-hoc 签名（绕过 xcodebuild 的 SDK 限制，生成 _CodeSignature 结构）
           codesign --force --sign - --generate-entitlement-der "$APP_PATH" 2>&1 || true
-          # 验证签名和结构
-          echo "=== App 内容 ==="
-          ls -la "$APP_PATH/"
-          echo "=== _CodeSignature ==="
-          ls -la "$APP_PATH/_CodeSignature/" 2>/dev/null || echo "无 _CodeSignature"
-          echo "=== 二进制信息 ==="
-          file "$APP_PATH/${APP_NAME}"
-          # 打包 IPA
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
           zip -qr "${APP_NAME}.ipa" Payload
@@ -109,7 +100,7 @@ jobs:
           ls -lh "${APP_NAME}.ipa"
 
       # ============================================================
-      # 签名构建（需配置 GitHub Secrets）
+      # 签名构建（使用企业证书）
       # ============================================================
       - name: Install Apple certificate
         if: steps.detect.outputs.has_cert == 'true'
@@ -126,6 +117,7 @@ jobs:
           security import certificate.p12 -k build.keychain -P "$IOS_CERTIFICATE_PWD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
           rm -f certificate.p12
+          echo "证书安装完成"
 
       - name: Install provisioning profile
         if: steps.detect.outputs.has_cert == 'true'
@@ -138,8 +130,37 @@ jobs:
           cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$UUID.mobileprovision
           rm -f profile.mobileprovision
           echo "Provisioning profile UUID: $UUID"
+          echo "PROFILE_UUID=$UUID" >> $GITHUB_ENV
 
-      - name: Build (Signed)
+      - name: Create ExportOptions.plist
+        if: steps.detect.outputs.has_cert == 'true'
+        run: |
+          cat > ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>ad-hoc</string>
+              <key>teamID</key>
+              <string>${{ env.TEAM_ID }}</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>stripSwiftSymbols</key>
+              <true/>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>app.silver9175.tomato8924</key>
+                  <string>${{ env.PROFILE_UUID }}</string>
+                  <key>app.silver9175.tomato8924.AppProxyExtension</key>
+                  <string>${{ env.PROFILE_UUID }}</string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+          cat ExportOptions.plist
+
+      - name: Archive (Signed)
         if: steps.detect.outputs.has_cert == 'true'
         run: |
           xcodebuild \
@@ -147,19 +168,25 @@ jobs:
             -scheme "${SCHEME}" \
             -configuration "${BUILD_CONFIG}" \
             -sdk iphoneos \
-            -derivedDataPath build \
-            -allowProvisioningUpdates \
-            clean build
+            -archivePath build/App.xcarchive \
+            -destination "generic/platform=iOS" \
+            clean archive \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="${{ env.TEAM_ID }}" \
+            PROVISIONING_PROFILE_SPECIFIER="${{ env.PROFILE_UUID }}" \
+            CODE_SIGN_IDENTITY="iPhone Distribution"
 
-      - name: Export signed IPA
+      - name: Export IPA (Signed)
         if: steps.detect.outputs.has_cert == 'true'
         run: |
-          APP_PATH="build/Build/Products/${BUILD_CONFIG}-iphoneos/${APP_NAME}.app"
-          mkdir -p Payload
-          cp -R "$APP_PATH" Payload/
-          zip -qr "${APP_NAME}.ipa" Payload
-          rm -rf Payload
-          ls -lh "${APP_NAME}.ipa"
+          xcodebuild -exportArchive \
+            -archivePath build/App.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist ExportOptions.plist \
+            -allowProvisioningUpdates
+          ls -lh build/export/
+          cp build/export/${APP_NAME}.ipa ./${APP_NAME}.ipa
+          ls -lh ${APP_NAME}.ipa
 
       # ============================================================
       # 上传产物

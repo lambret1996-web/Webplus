@@ -1676,7 +1676,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
         
         NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, _ in
             let isRunning = managers?.contains(where: { $0.localizedDescription == "LightBrowserProxy" && $0.connection.status == .connected }) ?? false
-            let defaults = UserDefaults(suiteName: "group.com.lambret.webplus")
+            let defaults = UserDefaults(suiteName: "group.ab6938971b3fa793.1")
             let total = defaults?.integer(forKey: "totalRequests") ?? 0
             let blocked = defaults?.integer(forKey: "blocked") ?? 0
             let redirected = defaults?.integer(forKey: "redirected") ?? 0
@@ -1762,7 +1762,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDo
             let manager = NETunnelProviderManager()
             manager.localizedDescription = "LightBrowserProxy"
             let proto = NETunnelProviderProtocol()
-            proto.providerBundleIdentifier = "com.lambret.webplus.AppProxyExtension"
+            proto.providerBundleIdentifier = "app.silver9175.tomato8924.AppProxyExtension"
             // 修复: 使用节点地址代替127.0.0.1，避免"需要更新"提示
             if useVLESS, let node = VLESSNodeManager.shared.currentNode {
                 proto.serverAddress = "\(node.host):\(node.port)"
