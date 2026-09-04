@@ -1237,13 +1237,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             UserDefaults.standard.set(!current, forKey: self.loginConfirmKey)
             self.showToast(!current ? "登录跳转确认已开启" : "已开启静默跳转")
         })
-        // 一键拦截当前站点GIF
-        if let currentURL = self.currentWebView.url, let host = currentURL.host {
-            let gifTitle = self.gifBlockedDomain != nil ? "🖼 拦截当前站GIF：已开启（点击关闭）" : "🖼 一键拦截当前站所有GIF"
-            alert.addAction(UIAlertAction(title: gifTitle, style: .default) { _ in
-                self.toggleGifBlock(for: host)
-            })
-        }
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         if let popover = alert.popoverPresentationController {
             popover.sourceView = translateButton
@@ -1263,34 +1256,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         showCustomAdManager()
     }
     /// 统一的自定义黑名单管理界面：列表+添加+删除+清空
-    // MARK: - 一键拦截当前站点GIF
-    private func toggleGifBlock(for host: String) {
-        // 生成GIF拦截规则：域名 + 任意路径 + .gif结尾
-        let escapedHost = host.replacingOccurrences(of: ".", with: "\\.")
-        let gifRule = escapedHost + "/.*\\.gif"
-        
-        if gifBlockedDomain == gifRule {
-            // 已开启，关闭
-            if let index = customAdDomains.firstIndex(of: gifRule) {
-                customAdDomains.remove(at: index)
-            }
-            gifBlockedDomain = nil
-            showToast("已关闭GIF拦截")
-        } else {
-            // 关闭之前的（如果有）
-            if let oldRule = gifBlockedDomain, let index = customAdDomains.firstIndex(of: oldRule) {
-                customAdDomains.remove(at: index)
-            }
-            // 开启新的
-            if !customAdDomains.contains(gifRule) {
-                customAdDomains.append(gifRule)
-            }
-            gifBlockedDomain = gifRule
-            showToast("已拦截 \(host) 所有GIF图片")
-        }
-        UserDefaults.standard.set(customAdDomains, forKey: customAdDomainsKey)
-        compileAdBlockRules()
-    }
     private func showCustomAdManager() {
         let alert = UIAlertController(
             title: "自定义广告黑名单",
@@ -1376,10 +1341,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             self.customAdDomains[index] = newRule
             UserDefaults.standard.set(self.customAdDomains, forKey: self.customAdDomainsKey)
             self.compileAdBlockRules()
-            // 如果修改的是GIF拦截规则，更新跟踪
-            if self.gifBlockedDomain == original {
-                self.gifBlockedDomain = newRule
-            }
             self.showToast("规则已更新")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 self.showCustomAdManager()
@@ -1389,9 +1350,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             self.customAdDomains.remove(at: index)
             UserDefaults.standard.set(self.customAdDomains, forKey: self.customAdDomainsKey)
             self.compileAdBlockRules()
-            if self.gifBlockedDomain == original {
-                self.gifBlockedDomain = nil
-            }
             self.showToast("已删除：\(readable)")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 self.showCustomAdManager()
