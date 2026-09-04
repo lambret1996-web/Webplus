@@ -1680,11 +1680,17 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             alert.message = "状态: \(isRunning ? "运行中" : "未启动")\n请求: \(total) 拦截: \(blocked) 重定向: \(redirected)"
         }
         
-        alert.addAction(UIAlertAction(title: "开启代理", style: .default) { _ in
-            self.startBrowserProxy()
+        alert.addAction(UIAlertAction(title: "开启代理(直连模式)", style: .default) { _ in
+            self.startBrowserProxy(useVLESS: false)
+        })
+        alert.addAction(UIAlertAction(title: "开启代理(VLESS模式)", style: .default) { _ in
+            self.startBrowserProxy(useVLESS: true)
         })
         alert.addAction(UIAlertAction(title: "关闭代理", style: .default) { _ in
             self.stopBrowserProxy()
+        })
+        alert.addAction(UIAlertAction(title: "VLESS节点管理", style: .default) { _ in
+            self.showVLESSNodeManager()
         })
         alert.addAction(UIAlertAction(title: "设置排除域名", style: .default) { _ in
             self.showProxyExcludeSettings()
@@ -1717,7 +1723,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         present(alert, animated: true)
     }
     
-    private func startBrowserProxy() {
+    private func startBrowserProxy(useVLESS: Bool) {
+        if useVLESS && VLESSNodeManager.shared.currentNode == nil {
+            showToast("请先添加VLESS节点")
+            showVLESSNodeManager()
+            return
+        }
         showToast("正在启动代理...")
         NETunnelProviderManager.loadAllFromPreferences { [weak self] managers, error in
             if let error = error {
@@ -1733,11 +1744,29 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             }
             let proto = NETunnelProviderProtocol()
             proto.providerBundleIdentifier = "com.lambret.webplus.AppProxyExtension"
-            proto.serverAddress = "127.0.0.1"
-            proto.providerConfiguration = [
+            // 修复: 使用节点地址代替127.0.0.1，避免"需要更新"提示
+            if useVLESS, let node = VLESSNodeManager.shared.currentNode {
+                proto.serverAddress = "\(node.host):\(node.port)"
+            } else {
+                proto.serverAddress = "proxy.local"
+            }
+            var providerConfig: [String: Any] = [
                 "excludeDomains": self?.proxyExcludeDomains ?? "",
-                "rules": "browser-proxy"
+                "rules": "browser-proxy",
+                "useVLESS": useVLESS
             ]
+            if useVLESS, let node = VLESSNodeManager.shared.currentNode {
+                providerConfig["vlessConfig"] = [
+                    "uuid": node.uuid,
+                    "host": node.host,
+                    "port": node.port,
+                    "wsPath": node.wsPath,
+                    "wsHost": node.wsHost ?? "",
+                    "tls": node.tls,
+                    "name": node.name
+                ]
+            }
+            proto.providerConfiguration = providerConfig
             manager.protocolConfiguration = proto
             manager.isEnabled = true
             manager.saveToPreferences { error in
@@ -1748,7 +1777,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 manager.loadFromPreferences { _ in
                     do {
                         try manager.connection.startVPNTunnel()
-                        self?.showToast("代理已启动")
+                        self?.showToast(useVLESS ? "VLESS代理已启动" : "代理已启动")
                     } catch {
                         self?.showToast("启动失败: \(error.localizedDescription)")
                     }
@@ -1776,6 +1805,81 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 }
             }
         }
+    }
+    
+    private func showVLESSNodeManager() {
+        let nodes = VLESSNodeManager.shared.nodes
+        let alert = UIAlertController(title: "VLESS节点管理", message: "当前节点: \(VLESSNodeManager.shared.currentNode?.name ?? "未选择")", preferredStyle: .actionSheet)
+        
+        for (i, node) in nodes.enumerated() {
+            let isCurrent = VLESSNodeManager.shared.currentNode?.uuid == node.uuid
+            alert.addAction(UIAlertAction(title: "\(isCurrent ? "✓ " : "")\(node.name) - \(node.host):\(node.port)", style: .default) { _ in
+                VLESSNodeManager.shared.currentNode = node
+                self.showToast("已切换到: \(node.name)")
+            })
+        }
+        
+        alert.addAction(UIAlertAction(title: "➕ 添加节点(粘贴vless://链接)", style: .default) { _ in
+            self.showAddVLESSNode()
+        })
+        
+        alert.addAction(UIAlertAction(title: "🗑 删除节点", style: .destructive) { _ in
+            self.showDeleteVLESSNode()
+        })
+        
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+    
+    private func showAddVLESSNode() {
+        let alert = UIAlertController(title: "添加VLESS节点", message: "粘贴vless://格式的订阅链接", preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.placeholder = "vless://uuid@host:port?path=/&security=tls&type=ws#节点名"
+            tf.autocapitalizationType = .none
+        }
+        alert.addAction(UIAlertAction(title: "添加", style: .default) { _ in
+            if let text = alert.textFields?.first?.text, !text.isEmpty {
+                if let node = VLESSNodeManager.shared.parseVLESSURL(text) {
+                    VLESSNodeManager.shared.addNode(node)
+                    if VLESSNodeManager.shared.currentNode == nil {
+                        VLESSNodeManager.shared.currentNode = node
+                    }
+                    self.showToast("节点添加成功: \(node.name)")
+                } else {
+                    self.showToast("链接格式错误")
+                }
+            }
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    
+    private func showDeleteVLESSNode() {
+        let nodes = VLESSNodeManager.shared.nodes
+        guard !nodes.isEmpty else {
+            showToast("没有可删除的节点")
+            return
+        }
+        let alert = UIAlertController(title: "删除节点", message: nil, preferredStyle: .actionSheet)
+        for (i, node) in nodes.enumerated() {
+            alert.addAction(UIAlertAction(title: node.name, style: .destructive) { _ in
+                VLESSNodeManager.shared.removeNode(at: i)
+                if VLESSNodeManager.shared.currentNode?.uuid == node.uuid {
+                    VLESSNodeManager.shared.currentNode = nil
+                }
+                self.showToast("已删除: \(node.name)")
+            })
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
     }
     
     @objc private func edgeMenuShowSettings() {
