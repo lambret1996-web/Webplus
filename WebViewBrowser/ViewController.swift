@@ -3822,6 +3822,7 @@ extension ViewController: UIGestureRecognizerDelegate {
             }
         }
     }
+}
 
 // MARK: - WKDownloadDelegate (iOS 15+)
 @available(iOS 15.0, *)
@@ -3887,4 +3888,3 @@ extension ViewController: WKDownloadDelegate {
 
 }
 
-}
