@@ -2021,7 +2021,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 // 验证是有效域名
                 if d.contains(".") && d.count > 3 {
                     // 转义点号为正则格式
-                    let escaped = d.replacingOccurrences(of: ".", with: "\.")
+                    let escaped = d.replacingOccurrences(of: ".", with: "\\.")
                     extractedDomains.insert(escaped)
                 }
             }
@@ -2046,7 +2046,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private func showImportedDomainsManager() {
         let alert = UIAlertController(title: "已导入规则（\(importedAdDomains.count)条）", message: "点击删除单条，或清空全部导入规则", preferredStyle: .actionSheet)
         for (i, domain) in importedAdDomains.enumerated() {
-            let readable = domain.replacingOccurrences(of: "\.", with: ".")
+            let readable = domain.replacingOccurrences(of: "\\.", with: ".")
             alert.addAction(UIAlertAction(title: "🗑 \(readable)", style: .destructive) { _ in
                 var list = self.importedAdDomains
                 list.remove(at: i)
@@ -2071,11 +2071,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         var exportText = "# 轻浏览广告黑名单导出\n"
         exportText += "# 手动添加（\(customAdDomains.count)条）：\n"
         for d in customAdDomains {
-            exportText += d.replacingOccurrences(of: "\.", with: ".") + "\n"
+            exportText += d.replacingOccurrences(of: "\\.", with: ".") + "\n"
         }
         exportText += "# 导入规则（\(importedAdDomains.count)条）：\n"
         for d in importedAdDomains {
-            exportText += d.replacingOccurrences(of: "\.", with: ".") + "\n"
+            exportText += d.replacingOccurrences(of: "\\.", with: ".") + "\n"
         }
         // 复制到剪贴板
         UIPasteboard.general.string = exportText
