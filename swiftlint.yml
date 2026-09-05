@@ -1,0 +1,40 @@
+# .swiftlint.yml
+
+included:
+  - WebViewBrowser
+  - AppProxyExtension
+
+excluded:
+  - Pods
+  - Carthage
+  - .build
+
+# 核心策略：只把严重问题设为 error
+opt_in_rules:
+  - force_unwrapping
+
+disabled_rules:
+  - trailing_whitespace
+  - todo # 忽略 TODO 标记
+
+# 这里的规则设为 error，CI 才会报错中断
+force_cast: error       # 禁止强制类型转换 (as!)
+force_try: error        # 禁止强制 try (try!)
+force_unwrapping: error # 禁止强制解包 (!)
+
+# 这里的规则设为 warning，CI 会显示警告但不会失败
+line_length:
+  warning: 200
+  error: 400 # 只有超长行才报错
+
+file_length:
+  warning: 500
+  error: 1000
+
+type_body_length:
+  warning: 300
+  error: 600
+
+function_body_length:
+  warning: 80
+  error: 150
