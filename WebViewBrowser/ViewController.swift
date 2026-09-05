@@ -2364,19 +2364,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         showCacheManager()
     }
         
-        // 一键清空全部缓存
-        alert.addAction(UIAlertAction(title: "🗑 一键清空浏览器全部缓存", style: .destructive) { _ in
-            self.fourLevelCache.removeAllCachedResponses()
-            self.showToast("已清空全部缓存")
-        })
-        
-        alert.addAction(UIAlertAction(title: "关闭", style: .cancel))
-        if let popover = alert.popoverPresentationController {
-            popover.sourceView = self.view
-            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
-        }
-        present(alert, animated: true)
-    }
     
     /// 统一的自定义黑名单管理界面：列表+添加+删除+清空
     private func showCustomAdManager() {
