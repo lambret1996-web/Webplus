@@ -12,6 +12,7 @@
 		SCENEDELEGATE_ID /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = SCENEDELEGATE_REF /* SceneDelegate.swift */; };
 		DOWNLOADMANAGER_ID /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DOWNLOADMANAGER_REF /* DownloadManager.swift */; };
 		DOWNLOADPANEL_ID /* DownloadPanelViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DOWNLOADPANEL_REF /* DownloadPanelViewController.swift */; };
+		CACHEMGR_ID /* CacheManagerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CACHEMGR_REF /* CacheManagerViewController.swift */; };
 		FOURLEVELCACHE_ID /* FourLevelCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FOURLEVELCACHE_REF /* FourLevelCache.swift */; };
 		APPPROXY_PROVIDER_BUILD /* AppProxyProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPPROXY_PROVIDER_REF /* AppProxyProvider.swift */; };
 		VLESSCLIENT_BUILD /* VLESSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = VLESSCLIENT_REF /* VLESSClient.swift */; };
@@ -27,8 +28,8 @@
 		SCENEDELEGATE_REF /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		DOWNLOADMANAGER_REF /* DownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManager.swift; sourceTree = "<group>"; };
 		DOWNLOADPANEL_REF /* DownloadPanelViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadPanelViewController.swift;
-		ADF334E46C5B90FD34843423 /* CacheManagerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheManagerViewController.swift; sourceTree = "<group>"; };
-		
+		CACHEMGR_REF /* CacheManagerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheManagerViewController.swift;
+		97BE59CC534217A699CB5B4C /* CacheManagerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheManagerViewController.swift; sourceTree = "<group>"; }; sourceTree = "<group>"; };
 		FOURLEVELCACHE_REF /* FourLevelCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FourLevelCache.swift; sourceTree = "<group>"; };
 		ASSETS_REF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		LAUNCHSCREEN_REF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -78,6 +79,7 @@ APPPROXY_FRAMEWORKS /* Frameworks */ = {
 				APPDELEGATE_REF /* AppDelegate.swift */,
 				DOWNLOADMANAGER_REF /* DownloadManager.swift */,
 				DOWNLOADPANEL_REF /* DownloadPanelViewController.swift */,
+				CACHEMGR_REF /* CacheManagerViewController.swift */,
 				FOURLEVELCACHE_REF /* FourLevelCache.swift */,
 				SCENEDELEGATE_REF /* SceneDelegate.swift */,
 				VIEWCONTROLLER_REF /* ViewController.swift */,
@@ -205,6 +207,7 @@ APPPROXY_TARGET /* AppProxyExtension */ = {
 				APPDELEGATE_ID /* AppDelegate.swift in Sources */,
 				DOWNLOADMANAGER_ID /* DownloadManager.swift in Sources */,
 				DOWNLOADPANEL_ID /* DownloadPanelViewController.swift in Sources */,
+				CACHEMGR_ID /* CacheManagerViewController.swift in Sources */,
 				FOURLEVELCACHE_ID /* FourLevelCache.swift in Sources */,
 				SCENEDELEGATE_ID /* SceneDelegate.swift in Sources */,
 				VIEWCONTROLLER_ID /* ViewController.swift in Sources */,
