@@ -90,13 +90,13 @@ jobs:
           rm -rf Payload
           ls -lah "${APP_NAME}.ipa"
 
-      - name: Upload IPA
       - name: 读取版本号
         run: |
           VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" WebViewBrowser/Info.plist)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "当前版本: $VERSION"
 
+      - name: Upload IPA
         uses: actions/upload-artifact@v5
         with:
           name: ${{ env.APP_NAME }}-unsigned-ipa
