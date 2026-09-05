@@ -34,6 +34,15 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Set build configuration
+
+      - name: 缓存Xcode构建产物
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-xcode-${{ hashFiles('WebViewBrowser.xcodeproj/**/*.pbxproj') }}
+          restore-keys: |
+            ${{ runner.os }}-xcode-
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "BUILD_CONFIG=${{ github.event.inputs.configuration }}" >> $GITHUB_ENV
@@ -75,6 +84,21 @@ jobs:
             -scheme "${SCHEME}" \
             -configuration "${BUILD_CONFIG}" \
             -sdk iphoneos \
+
+      - name: 自动递增版本号
+        run: |
+          CURRENT_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" WebViewBrowser/Info.plist)
+          echo "当前版本: $CURRENT_VERSION"
+          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+          NEW_MINOR=$((MINOR + 1))
+          NEW_VERSION="$MAJOR.$NEW_MINOR"
+          echo "新版本: $NEW_VERSION"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $NEW_VERSION" WebViewBrowser/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEW_VERSION" WebViewBrowser/Info.plist
+          echo "VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          echo "版本号已自动递增到 $NEW_VERSION"
+
             -derivedDataPath build \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
@@ -284,3 +308,31 @@ jobs:
           name: ${{ env.APP_NAME }}-signed-ipa
           path: ${{ env.APP_NAME }}.ipa
           retention-days: 90
+
+      - name: IPA体积分析
+        run: |
+          echo "=== IPA 体积分析 ==="
+          IPA_SIZE=$(du -sh "${{ env.APP_NAME }}.ipa" | cut -f1)
+          echo "IPA 总大小: $IPA_SIZE"
+          rm -rf ipa_analysis
+          mkdir ipa_analysis
+          unzip -q "${{ env.APP_NAME }}.ipa" -d ipa_analysis
+          echo "--- App 包内容（前15大） ---"
+          du -sh ipa_analysis/Payload/*.app/* 2>/dev/null | sort -rh | head -15
+          rm -rf ipa_analysis
+
+      - name: 自动发布Release（仅tag或手动触发）
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: Webplus v${{ env.VERSION }}
+          body: |
+            ## Webplus v${{ env.VERSION }}
+            ### 构建信息
+            - 提交: ${{ github.sha }}
+            ### 安装说明
+            1. 下载下方 IPA 文件
+            2. 使用 TrollStore 或爱思助手安装
+          files: |
+            ${{ env.APP_NAME }}.ipa
