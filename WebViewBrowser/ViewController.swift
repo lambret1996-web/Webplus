@@ -28,7 +28,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private let customTitlesKey = "customWindowTitles"
     private let customURLsKey = "customWindowURLs"
     private let tabBarHeight: CGFloat = 28
-    private let translateButtonSize: CGFloat = 18
+    private let translateButtonSize: CGFloat = 21
     private let maxTranslateSegments = 5000
     private let refreshTriggerDistance: CGFloat = 70
     // MARK: - UI 组件
@@ -2466,14 +2466,14 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         let alert = UIAlertController(title: "翻译模式 & 浏览器设置", message: nil, preferredStyle: .actionSheet)
         // 翻译模式切换
         let currentMode = TranslateManager.shared.currentMode
-        let modeNames: [TranslateManager.TranslateMode: String] = [.local: "本地翻译（仅离线词库）", .online: "在线翻译（百度接口）", .mixed: "混合翻译（推荐）", .alwaysOn: "一直开启翻译（默认离线）"]
+        let modeNames: [TranslateManager.TranslateMode: String] = [.local: "本地翻译（仅离线词库）", .online: "在线翻译（百度接口）", .mixed: "混合翻译（推荐）", .alwaysOn: "自动翻译（默认离线+动态监听）"]
         for mode in [TranslateManager.TranslateMode.local, .online, .mixed, .alwaysOn] {
             let isSelected = mode == currentMode
             let title = isSelected ? "✓ \(modeNames[mode] ?? "")" : (modeNames[mode] ?? "")
             alert.addAction(UIAlertAction(title: title, style: .default) { _ in
                 TranslateManager.shared.setMode(mode)
                 self.showToast("已切换为：\(modeNames[mode] ?? "")")
-                // v16.9 如果切换到一直开启翻译，立即对当前页面执行翻译
+                // v16.10 如果切换到自动翻译，立即对当前页面执行翻译
                 if mode == .alwaysOn {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         self.autoTranslateIfNeeded()
@@ -3788,7 +3788,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
     }
     // MARK: - 翻译功能
-    // v16.9 一直开启翻译：页面加载完成后自动执行离线翻译
+    // v16.10 自动翻译：页面加载完成后自动执行离线翻译
     private func autoTranslateIfNeeded() {
         guard TranslateManager.shared.isAutoTranslateEnabled else { return }
         guard !isTranslating else { return }
@@ -3814,7 +3814,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         // 根据翻译模式执行
         let mode = TranslateManager.shared.currentMode
         switch mode {
-        case .local, .alwaysOn:  // v16.9 一直开启翻译默认使用离线翻译
+        case .local, .alwaysOn:  // v16.10 自动翻译默认使用离线翻译
             startLocalTranslation()
         case .online:
             startTranslation()
@@ -4191,7 +4191,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             let title = webView.title ?? url.absoluteString
             addToHistory(url: url.absoluteString, title: title)
         }
-        // v16.9 一直开启翻译：页面加载完成后自动翻译
+        // v16.10 自动翻译：页面加载完成后自动翻译
         if webView === currentWebView {
             autoTranslateIfNeeded()
         }

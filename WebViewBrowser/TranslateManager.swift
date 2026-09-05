@@ -125,7 +125,7 @@ class TranslateManager {
         return dict
     }
 
-    // MARK: - 生成JS翻译脚本（v16.7安全版：迭代遍历+节点上限）
+    // MARK: - 生成JS翻译脚本（v16.10：MutationObserver动态监听子菜单/SPA内容）
     private func generateTranslateScript(dictionary: [String: String]) -> String {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: dictionary),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
@@ -148,6 +148,9 @@ class TranslateManager {
                 const skipTags = {'SCRIPT':1,'STYLE':1,'NOSCRIPT':1,'SVG':1,'CODE':1,'PRE':1,'TEXTAREA':1,'INPUT':1,'SELECT':1,'OPTION':1,'IFRAME':1,'CANVAS':1,'TEMPLATE':1};
                 const MAX_NODES = 3000;
                 let translatedCount = 0;
+                let observer = null;
+                let pendingNodes = [];
+                let debounceTimer = null;
 
                 function translateText(text) {
                     if (!text || !text.trim()) return text;
@@ -208,25 +211,92 @@ class TranslateManager {
                 }
 
                 // 迭代版遍历（使用栈，避免递归栈溢出）
-                const stack = [document.body];
-                let nodeCount = 0;
-                while (stack.length > 0 && nodeCount < MAX_NODES) {
-                    const node = stack.pop();
-                    if (!node) continue;
-                    nodeCount++;
-                    translateNode(node);
-                    if (node.nodeType === 1 && node.childNodes) {
-                        const tag = node.tagName;
-                        if (!skipTags[tag]) {
-                            const children = node.childNodes;
-                            for (let i = children.length - 1; i >= 0; i--) {
-                                if (children[i].nodeType === 1 || children[i].nodeType === 3) {
-                                    stack.push(children[i]);
+                function translateSubtree(root) {
+                    if (!root) return;
+                    const stack = [root];
+                    let nodeCount = 0;
+                    while (stack.length > 0 && nodeCount < MAX_NODES) {
+                        const node = stack.pop();
+                        if (!node) continue;
+                        nodeCount++;
+                        translateNode(node);
+                        if (node.nodeType === 1 && node.childNodes) {
+                            const tag = node.tagName;
+                            if (!skipTags[tag]) {
+                                const children = node.childNodes;
+                                for (let i = children.length - 1; i >= 0; i--) {
+                                    if (children[i].nodeType === 1 || children[i].nodeType === 3) {
+                                        stack.push(children[i]);
+                                    }
                                 }
                             }
                         }
                     }
                 }
+
+                // v16.10 防抖处理动态节点翻译
+                function flushPendingTranslations() {
+                    if (pendingNodes.length === 0) return;
+                    const nodes = pendingNodes;
+                    pendingNodes = [];
+                    for (let i = 0; i < nodes.length; i++) {
+                        try {
+                            translateSubtree(nodes[i]);
+                        } catch(e) {}
+                    }
+                }
+
+                function scheduleTranslation(node) {
+                    if (!node) return;
+                    pendingNodes.push(node);
+                    if (debounceTimer) clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(flushPendingTranslations, 150);
+                }
+
+                // v16.10 启动MutationObserver监听动态内容（子菜单、SPA路由变化等）
+                function startObserver() {
+                    if (observer) return;
+                    try {
+                        observer = new MutationObserver(function(mutations) {
+                            for (let i = 0; i < mutations.length; i++) {
+                                const mutation = mutations[i];
+                                if (mutation.type === 'childList') {
+                                    const added = mutation.addedNodes;
+                                    for (let j = 0; j < added.length; j++) {
+                                        const node = added[j];
+                                        if (node.nodeType === 1 || node.nodeType === 3) {
+                                            scheduleTranslation(node);
+                                        }
+                                    }
+                                } else if (mutation.type === 'characterData') {
+                                    const node = mutation.target;
+                                    if (node.nodeType === 3) {
+                                        const text = node.textContent;
+                                        if (text && text.trim() && /[a-zA-Z]/.test(text)) {
+                                            const newText = translateText(text);
+                                            if (newText !== text) {
+                                                node.textContent = newText;
+                                                translatedCount++;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                        observer.observe(document.body, {
+                            childList: true,
+                            subtree: true,
+                            characterData: true,
+                            characterDataOldValue: false
+                        });
+                        window.__browser_translate_observer__ = observer;
+                    } catch(e) {
+                        console.warn('MutationObserver启动失败:', e);
+                    }
+                }
+
+                // 初始全量翻译
+                translateSubtree(document.body);
 
                 try {
                     document.documentElement.setAttribute('data-translated', 'true');
@@ -235,7 +305,11 @@ class TranslateManager {
                 if (translatedCount > 0) {
                     window.__browser_translated__ = true;
                 }
-                return {success: true, translated: translatedCount, nodes: nodeCount};
+
+                // v16.10 启动动态监听，确保子菜单展开后自动翻译
+                startObserver();
+
+                return {success: true, translated: translatedCount, observer: true};
             } catch(e) {
                 return {success: false, reason: 'exception: ' + e.message};
             }
@@ -340,6 +414,11 @@ class TranslateManager {
         let script = """
         (function() {
             try {
+                // v16.10 停止MutationObserver，避免还原后又被自动翻译
+                if (window.__browser_translate_observer__) {
+                    try { window.__browser_translate_observer__.disconnect(); } catch(e) {}
+                    window.__browser_translate_observer__ = null;
+                }
                 if (window.__browser_translated__) {
                     window.__browser_translated__ = false;
                     document.documentElement.removeAttribute('data-translated');
