@@ -1844,6 +1844,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             self.showAddVLESSNode()
         })
         
+        alert.addAction(UIAlertAction(title: "📊 测试节点延迟", style: .default) { _ in
+            self.testAllNodes()
+        })
+
         alert.addAction(UIAlertAction(title: "📡 订阅管理", style: .default) { _ in
             self.showSubscriptionManager()
         })

@@ -224,11 +224,26 @@ jobs:
           
           # 手动将Extension添加到IPA中（先签名再添加）
           if [ -d "build/AppProxyExtension.appex" ]; then
-            echo "给Extension做ad-hoc签名..."
-            # 复制entitlements到Extension
+            echo "给Extension签名（确保entitlements正确）..."
+            # 安装ldid（用于TrollStore签名）
+            brew install ldid 2>/dev/null || true
+            # 复制entitlements
             cp AppProxyExtension/AppProxyExtension.entitlements build/AppProxyExtension.appex/entitlements.plist
-            # ad-hoc签名（TrollStore支持）
-            codesign --force --sign - --entitlements build/AppProxyExtension.appex/entitlements.plist --timestamp=none build/AppProxyExtension.appex || echo "签名警告，继续"
+            # 先用证书签名（如果失败则用ad-hoc）
+            CERT_ID=$(security find-identity -v -p codesigning build.keychain 2>/dev/null | grep -o '"[^"]*"' | head -1 | tr -d '"')
+            if [ -n "$CERT_ID" ]; then
+              echo "使用证书签名: $CERT_ID"
+              codesign --force --sign "$CERT_ID" --entitlements build/AppProxyExtension.appex/entitlements.plist --generate-entitlement-der --timestamp=none build/AppProxyExtension.appex 2>/dev/null || \
+              codesign --force --sign - --entitlements build/AppProxyExtension.appex/entitlements.plist --generate-entitlement-der --timestamp=none build/AppProxyExtension.appex
+            else
+              echo "使用ad-hoc签名"
+              codesign --force --sign - --entitlements build/AppProxyExtension.appex/entitlements.plist --generate-entitlement-der --timestamp=none build/AppProxyExtension.appex
+            fi
+            # 用ldid重新签名确保entitlements正确（TrollStore兼容）
+            if command -v ldid &> /dev/null; then
+              ldid -Sbuild/AppProxyExtension.appex/entitlements.plist build/AppProxyExtension.appex/AppProxyExtension
+              echo "ldid签名完成"
+            fi
             rm -f build/AppProxyExtension.appex/entitlements.plist
             echo "Extension签名完成"
             
