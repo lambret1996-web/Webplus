@@ -675,10 +675,10 @@ class CacheManagerViewController: UIViewController {
             toast.heightAnchor.constraint(greaterThanOrEqualToConstant: 40)
         ])
 
-        UIView.animate(withDuration: 0.3, delay: 1.5, options: .curveEaseOut) {
+        UIView.animate(withDuration: 0.3, delay: 1.5, options: .curveEaseOut, animations: {
             toast.alpha = 0
-        } { _ in
+        }, completion: { _ in
             toast.removeFromSuperview()
-        }
+        })
     }
 }
