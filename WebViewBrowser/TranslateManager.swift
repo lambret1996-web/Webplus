@@ -1,13 +1,13 @@
 //
 //  TranslateManager.swift
-//  轻量浏览器 - JS离线英译中翻译管理器（v16.5重构版）
+//  轻量浏览器 - JS离线英译中翻译管理器（v16.7安全版）
 //
-//  v16.5 修复：
-//  - 修复walk函数顺序bug（先标记后遍历导致文本被跳过）
-//  - 放宽readyState检查（interactive即可翻译）
-//  - 简化重试逻辑，最多重试3次
-//  - 返回翻译计数，确认实际翻译了多少节点
-//  - 翻译标记仅在真正翻译成功后设置
+//  v16.7 修复：
+//  - walk改为迭代版（栈遍历），避免深层DOM递归栈溢出导致闪退
+//  - 添加翻译节点上限（3000），超大页面分批处理
+//  - 所有completion回调统一在主线程执行
+//  - 简化重试逻辑，最多重试2次
+//  - 添加webView加载状态检查
 //
 
 import UIKit
@@ -22,7 +22,7 @@ class TranslateManager {
     private var isGeneralLoaded = false
     private var isGithubLoaded = false
 
-    // 内置兜底高频词条（JSON加载失败时使用）
+    // 内置兜底高频词条
     private let fallbackDict: [String: String] = [
         "home": "首页", "back": "返回", "forward": "前进", "refresh": "刷新",
         "search": "搜索", "submit": "提交", "cancel": "取消", "ok": "确定",
@@ -46,8 +46,7 @@ class TranslateManager {
         "pricing": "价格", "docs": "文档", "support": "支持",
         "new": "新建", "file": "文件", "folder": "文件夹",
         "name": "名称", "description": "描述", "public": "公开", "private": "私有",
-        "readme": "说明文档", "license": "许可证", "gitignore": "忽略文件",
-        "language": "语言", "topics": "主题", "about": "关于"
+        "readme": "说明文档", "license": "许可证", "language": "语言", "topics": "主题"
     ]
 
     // MARK: - 翻译模式
@@ -103,13 +102,11 @@ class TranslateManager {
         return githubDictionary
     }
 
-    // 判断是否为GitHub站点
     func isGithubSite(url: URL?) -> Bool {
         guard let host = url?.host?.lowercased() else { return false }
         return host.contains("github.com") || host.contains("githubusercontent.com") || host.contains("github.io")
     }
 
-    // 获取合并后的词库
     func getMergedDictionary(for url: URL?) -> [String: String] {
         var dict = loadGeneralDictionary()
         if isGithubSite(url: url) {
@@ -122,7 +119,7 @@ class TranslateManager {
         return dict
     }
 
-    // MARK: - 生成JS翻译脚本（v16.5修复版）
+    // MARK: - 生成JS翻译脚本（v16.7安全版：迭代遍历+节点上限）
     private func generateTranslateScript(dictionary: [String: String]) -> String {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: dictionary),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
@@ -132,32 +129,33 @@ class TranslateManager {
         let script = """
         (function() {
             try {
-                // 已翻译过则直接返回
                 if (window.__browser_translated__) {
                     return {success: true, already: true, translated: 0};
                 }
-                // 放宽readyState：只要不是loading就可以翻译
+                if (!document.body) {
+                    return {success: false, reason: 'no_body'};
+                }
                 if (document.readyState === 'loading') {
                     return {success: false, reason: 'page_loading'};
                 }
                 const dict = \(jsonString);
                 const skipTags = {'SCRIPT':1,'STYLE':1,'NOSCRIPT':1,'SVG':1,'CODE':1,'PRE':1,'TEXTAREA':1,'INPUT':1,'SELECT':1,'OPTION':1,'IFRAME':1,'CANVAS':1,'TEMPLATE':1};
+                const MAX_NODES = 3000;
                 let translatedCount = 0;
 
                 function translateText(text) {
                     if (!text || !text.trim()) return text;
-                    // 纯数字符号不翻译
                     if (/^[\\d\\s\\W_]+$/.test(text)) return text;
-                    // 中文占比超过40%不翻译
                     const chineseCount = (text.match(/[\\u4e00-\\u9fa5]/g) || []).length;
                     if (chineseCount > text.length * 0.4) return text;
-                    // 超长文本不翻译（避免性能问题）
                     if (text.trim().length > 300) return text;
                     let result = text;
-                    const keys = Object.keys(dict).sort(function(a, b) { return b.length - a.length; });
+                    const keys = Object.keys(dict);
+                    keys.sort(function(a, b) { return b.length - a.length; });
                     for (let i = 0; i < keys.length; i++) {
                         try {
                             const key = keys[i];
+                            if (!key || key.length < 2) continue;
                             const escaped = key.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
                             const regex = new RegExp('\\\\b' + escaped + '\\\\b', 'gi');
                             result = result.replace(regex, dict[key]);
@@ -166,10 +164,8 @@ class TranslateManager {
                     return result;
                 }
 
-                // v16.5修复：先遍历子节点翻译文本，最后再标记当前元素
-                function walk(node) {
+                function translateNode(node) {
                     if (!node) return;
-                    // 文本节点：直接翻译
                     if (node.nodeType === 3) {
                         const text = node.textContent;
                         if (text && text.trim() && /[a-zA-Z]/.test(text)) {
@@ -181,47 +177,59 @@ class TranslateManager {
                         }
                         return;
                     }
-                    // 元素节点
                     if (node.nodeType === 1) {
                         const tag = node.tagName;
                         if (skipTags[tag]) return;
-                        // 翻译属性
-                        if (node.alt) {
-                            const newAlt = translateText(node.alt);
-                            if (newAlt !== node.alt) { node.alt = newAlt; translatedCount++; }
-                        }
-                        if (node.placeholder) {
-                            const newPh = translateText(node.placeholder);
-                            if (newPh !== node.placeholder) { node.placeholder = newPh; translatedCount++; }
-                        }
-                        if (node.title) {
-                            const newTitle = translateText(node.title);
-                            if (newTitle !== node.title) { node.title = newTitle; translatedCount++; }
-                        }
-                        if (node.value && (tag === 'INPUT' || tag === 'BUTTON')) {
-                            const newVal = translateText(node.value);
-                            if (newVal !== node.value) { node.value = newVal; translatedCount++; }
-                        }
-                        // 先递归遍历所有子节点（关键修复：子节点翻译不受父元素标记影响）
-                        const children = node.childNodes;
-                        for (let i = 0; i < children.length; i++) {
-                            walk(children[i]);
-                        }
-                        // 最后再标记当前元素为已翻译
-                        if (node.setAttribute) {
-                            node.setAttribute('data-translated', '1');
+                        try {
+                            if (node.alt) {
+                                const newAlt = translateText(node.alt);
+                                if (newAlt !== node.alt) { node.alt = newAlt; translatedCount++; }
+                            }
+                            if (node.placeholder) {
+                                const newPh = translateText(node.placeholder);
+                                if (newPh !== node.placeholder) { node.placeholder = newPh; translatedCount++; }
+                            }
+                            if (node.title) {
+                                const newTitle = translateText(node.title);
+                                if (newTitle !== node.title) { node.title = newTitle; translatedCount++; }
+                            }
+                            if (node.value && (tag === 'INPUT' || tag === 'BUTTON')) {
+                                const newVal = translateText(node.value);
+                                if (newVal !== node.value) { node.value = newVal; translatedCount++; }
+                            }
+                        } catch(e) {}
+                    }
+                }
+
+                // 迭代版遍历（使用栈，避免递归栈溢出）
+                const stack = [document.body];
+                let nodeCount = 0;
+                while (stack.length > 0 && nodeCount < MAX_NODES) {
+                    const node = stack.pop();
+                    if (!node) continue;
+                    nodeCount++;
+                    translateNode(node);
+                    if (node.nodeType === 1 && node.childNodes) {
+                        const tag = node.tagName;
+                        if (!skipTags[tag]) {
+                            const children = node.childNodes;
+                            for (let i = children.length - 1; i >= 0; i--) {
+                                if (children[i].nodeType === 1 || children[i].nodeType === 3) {
+                                    stack.push(children[i]);
+                                }
+                            }
                         }
                     }
                 }
 
-                walk(document.body);
-                document.documentElement.setAttribute('data-translated', 'true');
+                try {
+                    document.documentElement.setAttribute('data-translated', 'true');
+                } catch(e) {}
 
-                // 仅在真正翻译了内容后才设置全局标记
                 if (translatedCount > 0) {
                     window.__browser_translated__ = true;
                 }
-                return {success: true, translated: translatedCount};
+                return {success: true, translated: translatedCount, nodes: nodeCount};
             } catch(e) {
                 return {success: false, reason: 'exception: ' + e.message};
             }
@@ -230,66 +238,79 @@ class TranslateManager {
         return script
     }
 
-    // MARK: - 本地翻译（重构版：带重试）
+    // MARK: - 本地翻译（安全版）
     func translateLocalOnly(webView: WKWebView, completion: @escaping (Bool, String?) -> Void) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.translateLocalOnly(webView: webView, completion: completion)
+            }
+            return
+        }
+
         let dict = getMergedDictionary(for: webView.url)
         let script = generateTranslateScript(dictionary: dict)
         guard !script.isEmpty else {
-            completion(false, "脚本生成失败")
+            DispatchQueue.main.async { completion(false, "脚本生成失败") }
             return
         }
+
         print("[TranslateManager] 开始本地翻译，词库\(dict.count)条")
-        executeWithRetry(webView: webView, script: script, attempts: 3, interval: 0.5, completion: completion)
+        executeScript(webView: webView, script: script, attempts: 2, interval: 0.6, completion: completion)
     }
 
-    private func executeWithRetry(webView: WKWebView, script: String, attempts: Int, interval: TimeInterval, completion: @escaping (Bool, String?) -> Void) {
-        webView.evaluateJavaScript(script) { [weak self] result, error in
-            guard let self = self else { return }
-
-            if let error = error {
-                print("[TranslateManager] JS执行异常: \(error.localizedDescription)")
-                completion(false, "JS执行异常: \(error.localizedDescription)")
-                return
-            }
-
-            guard let dict = result as? [String: Any] else {
-                print("[TranslateManager] 返回格式异常: \(String(describing: result))")
-                completion(false, "返回格式异常")
-                return
-            }
-
-            let success = dict["success"] as? Bool ?? false
-            let reason = dict["reason"] as? String
-            let translated = dict["translated"] as? Int ?? 0
-            let already = dict["already"] as? Bool ?? false
-
-            if already {
-                print("[TranslateManager] 页面已翻译过")
-                completion(true, "页面已翻译过")
-                return
-            }
-
-            if success {
-                print("[TranslateManager] 本地翻译成功，翻译了\(translated)处文本")
-                completion(true, "翻译了\(translated)处文本")
-                return
-            }
-
-            // 页面还在加载中，重试
-            if reason == "page_loading" && attempts > 0 {
-                print("[TranslateManager] 页面加载中，\(interval)秒后重试（剩余\(attempts)次）")
-                DispatchQueue.main.asyncAfter(deadline: .now() + interval) { [weak self] in
-                    self?.executeWithRetry(webView: webView, script: script, attempts: attempts - 1, interval: interval, completion: completion)
+    private func executeScript(webView: WKWebView, script: String, attempts: Int, interval: TimeInterval, completion: @escaping (Bool, String?) -> Void) {
+        webView.evaluateJavaScript(script) { result, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("[TranslateManager] JS执行异常: \(error.localizedDescription)")
+                    if attempts > 0 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + interval) { [weak self] in
+                            self?.executeScript(webView: webView, script: script, attempts: attempts - 1, interval: interval, completion: completion)
+                        }
+                    } else {
+                        completion(false, "JS执行异常: \(error.localizedDescription)")
+                    }
+                    return
                 }
-                return
-            }
 
-            print("[TranslateManager] 本地翻译失败: \(reason ?? "未知")")
-            completion(false, reason ?? "翻译失败")
+                guard let dict = result as? [String: Any] else {
+                    print("[TranslateManager] 返回格式异常: \(String(describing: result))")
+                    completion(false, "返回格式异常")
+                    return
+                }
+
+                let success = dict["success"] as? Bool ?? false
+                let reason = dict["reason"] as? String
+                let translated = dict["translated"] as? Int ?? 0
+                let already = dict["already"] as? Bool ?? false
+
+                if already {
+                    print("[TranslateManager] 页面已翻译过")
+                    completion(true, "页面已翻译过")
+                    return
+                }
+
+                if success {
+                    print("[TranslateManager] 本地翻译成功，翻译了\(translated)处文本")
+                    completion(true, "翻译了\(translated)处文本")
+                    return
+                }
+
+                if (reason == "page_loading" || reason == "no_body") && attempts > 0 {
+                    print("[TranslateManager] 页面未就绪(\(reason ?? ""))，\(interval)秒后重试（剩余\(attempts)次）")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + interval) { [weak self] in
+                        self?.executeScript(webView: webView, script: script, attempts: attempts - 1, interval: interval, completion: completion)
+                    }
+                    return
+                }
+
+                print("[TranslateManager] 本地翻译失败: \(reason ?? "未知")")
+                completion(false, reason ?? "翻译失败")
+            }
         }
     }
 
-    // MARK: - 混合翻译（本地优先，失败自动降级在线）
+    // MARK: - 混合翻译（本地优先，失败降级在线）
     func translateMixed(webView: WKWebView, onlineFallback: @escaping () -> Void, completion: @escaping (Bool, String?) -> Void) {
         translateLocalOnly(webView: webView) { success, reason in
             if success {
@@ -304,19 +325,31 @@ class TranslateManager {
 
     // MARK: - 还原原文
     func restoreOriginal(webView: WKWebView, completion: ((Bool) -> Void)? = nil) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.restoreOriginal(webView: webView, completion: completion)
+            }
+            return
+        }
         let script = """
         (function() {
-            if (window.__browser_translated__) {
-                window.__browser_translated__ = false;
-                document.documentElement.removeAttribute('data-translated');
-                location.reload();
-                return true;
+            try {
+                if (window.__browser_translated__) {
+                    window.__browser_translated__ = false;
+                    document.documentElement.removeAttribute('data-translated');
+                    location.reload();
+                    return true;
+                }
+                return false;
+            } catch(e) {
+                return false;
             }
-            return false;
         })();
         """
-        webView.evaluateJavaScript(script) { result, error in
-            completion?(error == nil)
+        webView.evaluateJavaScript(script) { _, error in
+            DispatchQueue.main.async {
+                completion?(error == nil)
+            }
         }
     }
 

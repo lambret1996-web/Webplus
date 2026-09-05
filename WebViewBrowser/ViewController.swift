@@ -3858,21 +3858,25 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         
         TranslateManager.shared.translateMixed(webView: targetWebView, onlineFallback: { [weak self] in
             DispatchQueue.main.async {
+                // 降级到在线翻译：保持isTranslating=true，由在线翻译管理状态
                 self?.startTranslation()
             }
         }) { [weak self] success, reason in
             guard let self = self else { return }
             DispatchQueue.main.async {
-                self.isTranslating = false
                 if success {
+                    self.isTranslating = false
                     self.isTranslated[targetIndex] = true
                     self.showTranslateToast("混合翻译完成（文字离线）")
+                    self.updateTranslateButtonState()
                 } else if reason == "已降级在线翻译" {
-                    // 已自动降级到在线翻译，不重复更新状态
+                    // 已降级到在线翻译，不修改isTranslating，由在线翻译管理
+                    self.showTranslateToast("离线词库无匹配，已切换在线翻译...")
                 } else {
+                    self.isTranslating = false
                     self.showTranslateToast("翻译失败：\(reason ?? "未知错误")")
+                    self.updateTranslateButtonState()
                 }
-                self.updateTranslateButtonState()
             }
         }
     }
@@ -3929,27 +3933,33 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private func startTranslation() {
         let targetWebView = currentWebView
         let targetIndex = activeIndex
+        isTranslating = true
+        updateTranslateButtonState()
         targetWebView.evaluateJavaScript(collectTextJS) { [weak self] result, error in
             guard let self = self else { return }
             if let _ = error {
+                self.isTranslating = false
                 self.showTranslateToast("翻译启动失败")
+                self.updateTranslateButtonState()
                 return
             }
             guard let jsonStr = result as? String,
                   let data = jsonStr.data(using: .utf8),
                   let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let texts = dict["texts"] as? [String] else {
+                self.isTranslating = false
                 self.showTranslateToast("页面无可翻译内容")
-                return
-            }
-            if texts.isEmpty {
-                self.isTranslated[targetIndex] = true
                 self.updateTranslateButtonState()
                 return
             }
-            self.isTranslating = true
+            if texts.isEmpty {
+                self.isTranslating = false
+                self.isTranslated[targetIndex] = true
+                self.showTranslateToast("页面无需翻译")
+                self.updateTranslateButtonState()
+                return
+            }
             self.isTranslated[targetIndex] = true
-            self.updateTranslateButtonState()
             self.translateWithOperationQueue(texts) { [weak self] translations in
                 guard let self = self else { return }
                 self.applyTranslations(translations, to: targetWebView)
@@ -4063,23 +4073,32 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private func restoreOriginalText() {
         let targetWebView = currentWebView
         let targetIndex = activeIndex
-        let js = """
-        (function() {
-            var all = document.querySelectorAll('*');
-            for (var i = 0; i < all.length; i++) {
-                for (var j = 0; j < all[i].childNodes.length; j++) {
-                    var n = all[i].childNodes[j];
-                    if (n.nodeType === 3 && n.__browser_orig_text__) n.textContent = n.__browser_orig_text__;
-                }
-            }
-            window.__browser_translate_active__ = false;
-            return 'restored';
-        })();
-        """
-        targetWebView.evaluateJavaScript(js) { [weak self] _, _ in
+        // v16.5+ 新翻译使用 __browser_translated__ 标记，通过reload还原
+        TranslateManager.shared.restoreOriginal(webView: targetWebView) { [weak self] success in
             guard let self = self else { return }
+            if !success {
+                // 旧翻译标记（__browser_orig_text__）的还原方式
+                let js = """
+                (function() {
+                    try {
+                        var all = document.querySelectorAll('*');
+                        for (var i = 0; i < all.length; i++) {
+                            for (var j = 0; j < all[i].childNodes.length; j++) {
+                                var n = all[i].childNodes[j];
+                                if (n.nodeType === 3 && n.__browser_orig_text__) n.textContent = n.__browser_orig_text__;
+                            }
+                        }
+                        window.__browser_translate_active__ = false;
+                        window.__browser_translated__ = false;
+                        return 'restored';
+                    } catch(e) { return 'error'; }
+                })();
+                """
+                targetWebView.evaluateJavaScript(js, completionHandler: nil)
+            }
             self.isTranslated[targetIndex] = false
             self.updateTranslateButtonState()
+            self.showTranslateToast("已还原原文")
         }
     }
     private func showTranslateToast(_ message: String) {
