@@ -2164,6 +2164,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             self.setAsDefaultBrowser()
         })
         
+        // 翻译模式
+        let currentMode = TranslateManager.shared.currentMode
+        let modeText = currentMode == .hybrid ? "混合（文字离线+图片在线）" : "传统在线翻译"
+        alert.addAction(UIAlertAction(title: "🌍 翻译模式（当前：\(modeText)）", style: .default) { _ in
+            self.showTranslateModeSelector()
+        })
+        
         // 离线缓存配置
         alert.addAction(UIAlertAction(title: "💾 离线缓存配置", style: .default) { _ in
             self.showOfflineCacheSettings()
@@ -2177,6 +2184,33 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         present(alert, animated: true)
     }
     
+    // MARK: - 翻译模式选择
+    private func showTranslateModeSelector() {
+        let alert = UIAlertController(title: "选择翻译模式", message: "混合模式：网页文字使用内置离线词库翻译（无需网络），图片使用在线翻译\n传统在线：完全使用原有百度在线翻译", preferredStyle: .actionSheet)
+        
+        alert.addAction(UIAlertAction(title: "🔀 混合翻译（推荐）", style: .default) { _ in
+            TranslateManager.shared.setMode(.hybrid)
+            self.showToast("已切换为混合翻译模式")
+        })
+        
+        alert.addAction(UIAlertAction(title: "🌐 传统在线翻译", style: .default) { _ in
+            TranslateManager.shared.setMode(.online)
+            self.showToast("已切换为传统在线翻译模式")
+        })
+        
+        alert.addAction(UIAlertAction(title: "🗑 清空翻译缓存", style: .destructive) { _ in
+            TranslateManager.shared.clearAllTranslationCache()
+            self.showToast("翻译缓存已清空")
+        })
+        
+        alert.addAction(UIAlertAction(title: "关闭", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+
     // MARK: - 离线缓存配置菜单
     private func showOfflineCacheSettings() {
         let defaults = UserDefaults.standard
@@ -3651,8 +3685,39 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         guard !isTranslating else { return }
         if isTranslated[activeIndex] {
             restoreOriginalText()
+            return
+        }
+        // 根据翻译模式执行：混合模式走JS离线翻译，在线模式走原有百度翻译
+        let mode = TranslateManager.shared.currentMode
+        if mode == .hybrid {
+            startHybridTranslation()
         } else {
             startTranslation()
+        }
+    }
+    
+    // MARK: - 混合翻译（文字JS离线+图片在线）
+    private func startHybridTranslation() {
+        let targetWebView = currentWebView
+        let targetIndex = activeIndex
+        isTranslating = true
+        updateTranslateButtonState()
+        showTranslateToast("正在离线翻译...")
+        
+        TranslateManager.shared.translatePageOffline(webView: targetWebView) { [weak self] success in
+            guard let self = self else { return }
+            DispatchQueue.main.async {
+                self.isTranslating = false
+                if success {
+                    self.isTranslated[targetIndex] = true
+                    self.showTranslateToast("翻译完成（文字离线）")
+                } else {
+                    // 离线翻译失败，降级到在线翻译
+                    self.showTranslateToast("离线翻译失败，切换在线翻译...")
+                    self.startTranslation()
+                }
+                self.updateTranslateButtonState()
+            }
         }
     }
     private func updateTranslateButtonState() {

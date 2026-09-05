@@ -15,7 +15,7 @@ import UIKit
 // 用于给离线条目按钮关联 OfflineItem 对象
 private var offlineItemKey: UInt8 = 0
 
-class CacheManagerViewController: UIViewController {
+class CacheManagerViewController: UIViewController, UIGestureRecognizerDelegate {
 
     // MARK: - UI 元素
     private let scrollView = UIScrollView()
@@ -80,8 +80,42 @@ class CacheManagerViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = UIColor(red: 0.95, green: 0.96, blue: 0.98, alpha: 1.0)
 
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+        navigationController?.interactivePopGestureRecognizer?.delegate = self
+
         setupUI()
+        setupBackButton()
         refreshCacheData()
+    }
+
+    private func setupBackButton() {
+        let backButton = UIButton(type: .system)
+        backButton.setImage(UIImage(systemName: "chevron.left"), for: .normal)
+        backButton.setTitle(" 返回", for: .normal)
+        backButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
+        backButton.tintColor = .systemBlue
+        backButton.backgroundColor = UIColor.white.withAlphaComponent(0.9)
+        backButton.layer.cornerRadius = 16
+        backButton.layer.shadowColor = UIColor.black.cgColor
+        backButton.layer.shadowOpacity = 0.1
+        backButton.layer.shadowOffset = CGSize(width: 0, height: 2)
+        backButton.layer.shadowRadius = 4
+        backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
+        backButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(backButton)
+        NSLayoutConstraint.activate([
+            backButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
+            backButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            backButton.heightAnchor.constraint(equalToConstant: 32)
+        ])
+    }
+
+    @objc private func backTapped() {
+        navigationController?.popViewController(animated: true)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        return true
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -343,7 +377,7 @@ class CacheManagerViewController: UIViewController {
         // 整体布局
         var lastView: UIView = titleLabel
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 60),
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 70),
             titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
             subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
             subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
