@@ -149,6 +149,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         setupProgressView()
         setupGestures()
         setupEdgeMenu()
+        // 定制网页长按菜单（汉化复制/粘贴等）
+        UIMenuController.shared.menuItems = [
+            UIMenuItem(title: "复制", action: #selector(customCopy(_:))),
+            UIMenuItem(title: "粘贴", action: #selector(customPaste(_:))),
+            UIMenuItem(title: "剪切", action: #selector(customCut(_:))),
+            UIMenuItem(title: "全选", action: #selector(customSelectAll(_:)))
+        ]
         switchToTab(index: 0)
         loadInitialPages()
         // 预创建下载文件夹，确保在Files App中可见
@@ -1311,8 +1318,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             ("photo", "全局图片拦截", #selector(edgeMenuToggleImageBlock)),
             ("globe", "UA 切换", #selector(edgeMenuSwitchUA)),
             ("hand.raised", "广告黑名单", #selector(edgeMenuManageAdBlock)),
-            ("trash", "清空站点缓存", #selector(edgeMenuClearSiteCache)),
-            ("trash.fill", "一键清空缓存", #selector(edgeMenuClearAllCache)),
+            ("internaldrive", "缓存管理", #selector(edgeMenuShowCacheManager)),
             ("network", "高级代理(AppProxy)", #selector(edgeMenuShowProxy)),
             ("gear", "设置", #selector(edgeMenuShowSettings))
         ]
@@ -1411,7 +1417,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     
     private func saveMenuOrder() {
-        let defaultTitles = ["增加书签", "书签列表", "历史记录", "下载管理", "全局图片拦截", "UA 切换", "广告黑名单", "清空站点缓存", "一键清空缓存", "设置"]
+        let defaultTitles = ["增加书签", "书签列表", "历史记录", "下载管理", "全局图片拦截", "UA 切换", "广告黑名单", "缓存管理", "高级代理", "设置"]
         var order: [Int] = []
         for item in edgeMenuFunctions {
             if let idx = defaultTitles.firstIndex(of: item.title) {
@@ -1431,7 +1437,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
         if !edgeMenuSortMode {
             // 保存排序
-            let defaultTitles = ["增加书签", "书签列表", "历史记录", "下载管理", "全局图片拦截", "UA 切换", "广告黑名单", "清空站点缓存", "一键清空缓存", "设置"]
+            let defaultTitles = ["增加书签", "书签列表", "历史记录", "下载管理", "全局图片拦截", "UA 切换", "广告黑名单", "缓存管理", "高级代理", "设置"]
             var order: [Int] = []
             for item in edgeMenuFunctions {
                 if let idx = defaultTitles.firstIndex(of: item.title) {
@@ -2100,6 +2106,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         showAppSettings()
     }
     
+    @objc private func edgeMenuShowCacheManager() {
+        closeEdgeMenu()
+        showCacheManagerWithStorage()
+    }
+    
     // MARK: - 独立设置页面
     private func showAppSettings() {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
@@ -2256,10 +2267,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         alert.addAction(UIAlertAction(title: globalImageTitle, style: .default) { _ in
             self.toggleGlobalImageBlock()
         })
-        // 四级缓存管理
-        alert.addAction(UIAlertAction(title: "💾 缓存管理（四级缓存）", style: .default) { _ in
-            self.showCacheManager()
-        })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         if let popover = alert.popoverPresentationController {
             popover.sourceView = translateButton
@@ -2382,6 +2389,66 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
         present(alert, animated: true)
     }
+    
+    // MARK: - 缓存管理（含存储状态）
+    private func showCacheManagerWithStorage() {
+        // 获取手机存储状态
+        let fileManager = FileManager.default
+        var totalSpace: Int64 = 0
+        var freeSpace: Int64 = 0
+        if let attrs = try? fileManager.attributesOfFileSystem(forPath: NSHomeDirectory()) {
+            totalSpace = attrs[.systemSize] as? Int64 ?? 0
+            freeSpace = attrs[.systemFreeSize] as? Int64 ?? 0
+        }
+        let usedSpace = totalSpace - freeSpace
+        let totalGB = Double(totalSpace) / 1024 / 1024 / 1024
+        let usedGB = Double(usedSpace) / 1024 / 1024 / 1024
+        let freeGB = Double(freeSpace) / 1024 / 1024 / 1024
+        
+        // 获取浏览器缓存大小
+        let sizes = fourLevelCache.cacheSize()
+        let cacheTotal = sizes.temp + sizes.static
+        let cacheMB = Double(cacheTotal) / 1024 / 1024
+        let tempMB = Double(sizes.temp) / 1024 / 1024
+        let staticMB = Double(sizes.static) / 1024 / 1024
+        
+        let message = String(format: """
+        📱 手机存储状态
+        总容量：%.1f GB
+        已使用：%.1f GB
+        剩余：%.1f GB
+        
+        📦 浏览器缓存
+        缓存总计：%.1f MB
+        动态页面：%.1f MB
+        静态资源：%.1f MB
+        """, totalGB, usedGB, freeGB, cacheMB, tempMB, staticMB)
+        
+        let alert = UIAlertController(title: "💾 缓存管理", message: message, preferredStyle: .actionSheet)
+        
+        // 清空当前站点缓存
+        if let host = currentWebView.url?.host {
+            alert.addAction(UIAlertAction(title: "📍 清空当前站点缓存（\(host)）", style: .default) { _ in
+                self.fourLevelCache.clearCacheForSite(host)
+                self.currentWebView.reload()
+                self.showToast("已清空 \(host) 缓存")
+            })
+        }
+        
+        // 一键清空全部缓存
+        alert.addAction(UIAlertAction(title: "🗑 一键清空浏览器全部缓存", style: .destructive) { _ in
+            self.fourLevelCache.removeAllCachedResponses()
+            self.showToast("已清空全部缓存")
+        })
+        
+        alert.addAction(UIAlertAction(title: "关闭", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+    
     /// 统一的自定义黑名单管理界面：列表+添加+删除+清空
     private func showCustomAdManager() {
         let alert = UIAlertController(
@@ -3782,6 +3849,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 self.showDownloadConfirm(url: downloadURL.absoluteString, fileName: fileName)
             }
         }
+    }
 
     @available(iOS 15.0, *)
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
@@ -3795,7 +3863,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 self.showToast("开始下载：\(fileName)")
             }
         }
-    }
     }
     // MARK: - WKNavigationDelegate
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -4073,3 +4140,44 @@ extension ViewController: WKDownloadDelegate {
 
 }
 
+
+    
+    // MARK: - 工具栏位置切换
+    private func applyToolbarPosition() {
+        let position = UserDefaults.standard.string(forKey: "addressBarPosition") ?? "顶部"
+        if position == "底部" {
+            tabBarTopConstraint.isActive = false
+            tabBarBottomConstraint.isActive = true
+            webViewTopConstraint.isActive = false
+            webViewBottomConstraint.isActive = false
+            webViewTopConstraint = webViewContainer.topAnchor.constraint(equalTo: view.topAnchor)
+            webViewBottomConstraint = webViewContainer.bottomAnchor.constraint(equalTo: tabBar.topAnchor)
+            webViewTopConstraint.isActive = true
+            webViewBottomConstraint.isActive = true
+        } else {
+            tabBarBottomConstraint.isActive = false
+            tabBarTopConstraint.isActive = true
+            webViewTopConstraint.isActive = false
+            webViewBottomConstraint.isActive = false
+            webViewTopConstraint = webViewContainer.topAnchor.constraint(equalTo: tabBar.bottomAnchor)
+            webViewBottomConstraint = webViewContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            webViewTopConstraint.isActive = true
+            webViewBottomConstraint.isActive = true
+        }
+    }
+    
+    // MARK: - 自定义菜单（汉化）
+    @objc private func customCopy(_ sender: Any) {
+        UIPasteboard.general.string = currentWebView.evaluateJavaScript("window.getSelection().toString()") { _, _ in }
+    }
+    @objc private func customPaste(_ sender: Any) {
+        if let text = UIPasteboard.general.string {
+            currentWebView.evaluateJavaScript("document.execCommand('paste')") { _, _ in }
+        }
+    }
+    @objc private func customCut(_ sender: Any) {
+        currentWebView.evaluateJavaScript("document.execCommand('cut')") { _, _ in }
+    }
+    @objc private func customSelectAll(_ sender: Any) {
+        currentWebView.evaluateJavaScript("document.execCommand('selectAll')") { _, _ in }
+    }
