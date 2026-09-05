@@ -1,8 +1,17 @@
-# Webplus - iOS 轻量浏览器
+# 轻量浏览器 - iOS 轻量浏览器
 
 一个基于 WKWebView 的 iOS 浏览器，支持手势导航、多窗口、广告拦截、VLESS 代理、节点测速等功能。
 
-## 当前版本：v15.5
+## 当前版本：v15.7
+
+
+## v15.7 更新日志
+- 应用名称更改为「轻量浏览器」
+- 打包方式回退为未签名 IPA（适配 TrollStore 安装）
+- 修复下载功能：添加缺失的 `webView(_:navigationResponse:didBecome:)` 方法，iOS 15+ 原生下载现在可以正常工作
+- 修复工具栏位置切换：在 viewDidLoad 中调用 applyToolbarPosition()，设置后重启生效
+- 默认浏览器功能改为说明提示（TrollStore 免签名版本受系统限制无法设置默认浏览器）
+- Info.plist 注册 HTTP/HTTPS URL Scheme，为以后正规签名支持默认浏览器做准备
 
 ## 功能特性
 

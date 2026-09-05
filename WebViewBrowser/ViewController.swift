@@ -145,6 +145,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         checkAndClearCacheIfNeeded()
         setupTabBar()
         setupWebViewContainer()
+        applyToolbarPosition() // 应用工具栏位置（顶部/底部）
         setupWebViews()
         setupProgressView()
         setupGestures()
@@ -2315,12 +2316,16 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     
     // MARK: - 设置默认浏览器
+    // MARK: - 设置默认浏览器
     private func setAsDefaultBrowser() {
-        let alert = UIAlertController(title: "设置默认浏览器", message: "📌 操作步骤：\n1. 点击「前往设置」跳转到系统设置\n2. 在设置页面向上滑动找到「默认浏览器应用」\n3. 点击选择本浏览器为默认\n\n⚠️ 仅 iOS 14 及以上系统支持此功能", preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "前往设置", style: .default) { _ in
-            if let url = URL(string: UIApplication.openSettingsURLString) {
-                UIApplication.shared.open(url, options: [:], completionHandler: nil)
-            }
+        let alert = UIAlertController(
+            title: "默认浏览器说明",
+            message: "⚠️ 当前为 TrollStore 免签名版本，受 iOS 系统限制，无法设置为默认浏览器。\n\n如需使用默认浏览器功能，需要使用正规 Apple 开发者证书打包安装。\n\n本应用已在 Info.plist 中注册了 HTTP/HTTPS 链接处理能力，正规签名后即可在系统设置中出现「默认浏览器」选项。",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "我知道了", style: .default))
+        present(alert, animated: true)
+    }
         })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         present(alert, animated: true)
@@ -3849,6 +3854,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 self.showDownloadConfirm(url: downloadURL.absoluteString, fileName: fileName)
             }
         }
+    }
+
+    // iOS 15+：导航响应变为下载时调用，必须设置 delegate 才能开始下载
+    @available(iOS 15.0, *)
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+        print("[Download] 导航响应已转换为下载任务")
     }
 
     // MARK: - WKNavigationDelegate
