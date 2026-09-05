@@ -16,7 +16,7 @@ jobs:
     steps:
       # 1. 检出代码
       - name: 检出代码仓库
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.inputs.branch_to_check || 'main' }}
 
