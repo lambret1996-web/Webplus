@@ -342,7 +342,19 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         let hasDot = input.contains(".")
         if hasChinese || hasSpace || !hasDot {
             let encoded = input.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? input
-            if let searchURL = URL(string: "https://www.google.com/search?q=\(encoded)") {
+            let engine = UserDefaults.standard.string(forKey: "searchEngine") ?? "Google"
+            let searchURLString: String
+            switch engine {
+            case "百度":
+                searchURLString = "https://www.baidu.com/s?wd=\(encoded)"
+            case "Bing":
+                searchURLString = "https://www.bing.com/search?q=\(encoded)"
+            case "DuckDuckGo":
+                searchURLString = "https://duckduckgo.com/?q=\(encoded)"
+            default:
+                searchURLString = "https://www.google.com/search?q=\(encoded)"
+            }
+            if let searchURL = URL(string: searchURLString) {
                 currentWebView.load(URLRequest(url: searchURL))
             }
             return true
@@ -2081,7 +2093,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         handleTranslateLongPress(UILongPressGestureRecognizer())
     }
     
-    private func setEdgeMenu(open: Bool, duration: TimeInterval = 0.6) {
+    private func setEdgeMenu(open: Bool, duration: TimeInterval = 0.3) {
         edgeMenuIsOpen = open
         let menuWidth = view.bounds.width * 0.50
         edgeMenuLeadingConstraint.constant = open ? -menuWidth : 0
@@ -2205,6 +2217,25 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         alert.addAction(UIAlertAction(title: "💾 缓存管理（四级缓存）", style: .default) { _ in
             self.showCacheManager()
         })
+        // 搜索引擎切换
+        let currentEngine = UserDefaults.standard.string(forKey: "searchEngine") ?? "Google"
+        alert.addAction(UIAlertAction(title: "🔍 搜索引擎（当前：\(currentEngine)）", style: .default) { _ in
+            self.showSearchEngineSelector()
+        })
+        // 地址栏位置
+        let addressBarPosition = UserDefaults.standard.string(forKey: "addressBarPosition") ?? "顶部"
+        alert.addAction(UIAlertAction(title: "📍 地址栏位置（当前：\(addressBarPosition)）", style: .default) { _ in
+            self.showAddressBarPositionSelector()
+        })
+        // 默认浏览器设置
+        alert.addAction(UIAlertAction(title: "🌐 设置为默认浏览器", style: .default) { _ in
+            self.setAsDefaultBrowser()
+        })
+        // 版本信息
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+        alert.addAction(UIAlertAction(title: "ℹ️ 版本号：v\(version)", style: .default) { _ in
+            self.showToast("当前版本：v\(version)")
+        })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         if let popover = alert.popoverPresentationController {
             popover.sourceView = translateButton
@@ -2212,6 +2243,55 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
         present(alert, animated: true)
     }
+    // MARK: - 搜索引擎切换
+    private func showSearchEngineSelector() {
+        let alert = UIAlertController(title: "选择搜索引擎", message: nil, preferredStyle: .actionSheet)
+        let engines = ["Google", "百度", "Bing", "DuckDuckGo"]
+        let current = UserDefaults.standard.string(forKey: "searchEngine") ?? "Google"
+        for engine in engines {
+            let title = engine == current ? "✓ \(engine)" : engine
+            alert.addAction(UIAlertAction(title: title, style: .default) { _ in
+                UserDefaults.standard.set(engine, forKey: "searchEngine")
+                self.showToast("搜索引擎已切换为：\(engine)")
+            })
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+    
+    // MARK: - 地址栏位置切换
+    private func showAddressBarPositionSelector() {
+        let alert = UIAlertController(title: "地址栏位置", message: "重启后生效", preferredStyle: .actionSheet)
+        let current = UserDefaults.standard.string(forKey: "addressBarPosition") ?? "顶部"
+        alert.addAction(UIAlertAction(title: current == "顶部" ? "✓ 顶部" : "顶部", style: .default) { _ in
+            UserDefaults.standard.set("顶部", forKey: "addressBarPosition")
+            self.showToast("地址栏位置：顶部（重启生效）")
+        })
+        alert.addAction(UIAlertAction(title: current == "底部" ? "✓ 底部" : "底部", style: .default) { _ in
+            UserDefaults.standard.set("底部", forKey: "addressBarPosition")
+            self.showToast("地址栏位置：底部（重启生效）")
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+    
+    // MARK: - 设置默认浏览器
+    private func setAsDefaultBrowser() {
+        showToast("请在系统设置中设置默认浏览器")
+        // iOS 14+ 支持设置默认浏览器
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url, options: [:], completionHandler: nil)
+        }
+    }
+    
     // MARK: - 广告拦截开关
     private func toggleAdBlock() {
         adBlockEnabled.toggle()
@@ -3669,9 +3749,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             // iOS 15+：使用WKWebView原生下载，保留完整请求上下文（Cookie、认证、重定向）
             decisionHandler(.download)
         } else {
-            // iOS 14及以下：使用URLSession下载
+            // iOS 14及以下：先取消导航，显示确认面板，用户确认后用URLSession下载
             decisionHandler(.cancel)
-            DownloadManager.shared.startDownload(url: downloadURL.absoluteString, fileName: fileName, mimeType: mime)
+            DispatchQueue.main.async {
+                self.showDownloadConfirm(url: downloadURL.absoluteString, fileName: fileName)
+            }
         }
 
     @available(iOS 15.0, *)

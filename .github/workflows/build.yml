@@ -224,26 +224,23 @@ jobs:
           
           # 手动将Extension添加到IPA中（先签名再添加）
           if [ -d "build/AppProxyExtension.appex" ]; then
-            echo "给Extension签名（确保entitlements正确）..."
-            # 安装ldid（用于TrollStore签名）
+            echo "给Extension签名（TrollStore兼容，确保entitlements嵌入二进制）..."
+            # 安装ldid
             brew install ldid 2>/dev/null || true
             # 复制entitlements
             cp AppProxyExtension/AppProxyExtension.entitlements build/AppProxyExtension.appex/entitlements.plist
-            # 先用证书签名（如果失败则用ad-hoc）
-            CERT_ID=$(security find-identity -v -p codesigning build.keychain 2>/dev/null | grep -o '"[^"]*"' | head -1 | tr -d '"')
-            if [ -n "$CERT_ID" ]; then
-              echo "使用证书签名: $CERT_ID"
-              codesign --force --sign "$CERT_ID" --entitlements build/AppProxyExtension.appex/entitlements.plist --generate-entitlement-der --timestamp=none build/AppProxyExtension.appex 2>/dev/null || \
-              codesign --force --sign - --entitlements build/AppProxyExtension.appex/entitlements.plist --generate-entitlement-der --timestamp=none build/AppProxyExtension.appex
-            else
-              echo "使用ad-hoc签名"
-              codesign --force --sign - --entitlements build/AppProxyExtension.appex/entitlements.plist --generate-entitlement-der --timestamp=none build/AppProxyExtension.appex
-            fi
-            # 用ldid重新签名确保entitlements正确（TrollStore兼容）
+            # 关键：用ldid把entitlements嵌入到二进制中（TrollStore要求）
             if command -v ldid &> /dev/null; then
+              echo "使用ldid签名二进制（嵌入entitlements）"
               ldid -Sbuild/AppProxyExtension.appex/entitlements.plist build/AppProxyExtension.appex/AppProxyExtension
-              echo "ldid签名完成"
+              echo "ldid二进制签名完成"
+            else
+              echo "ldid未安装，使用codesign"
             fi
+            # 用codesign签名整个.appex包（ad-hoc）
+            codesign --force --sign - --entitlements build/AppProxyExtension.appex/entitlements.plist --generate-entitlement-der --timestamp=none build/AppProxyExtension.appex 2>/dev/null || echo "codesign签名警告"
+            # 验证entitlements是否嵌入
+            codesign -d --entitlements - build/AppProxyExtension.appex 2>&1 | head -20 || true
             rm -f build/AppProxyExtension.appex/entitlements.plist
             echo "Extension签名完成"
             
