@@ -2351,38 +2351,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
     }
     // MARK: - 四级缓存管理
+    // MARK: - 四级缓存管理（全屏页面）
     private func showCacheManager() {
-        let sizes = fourLevelCache.cacheSize()
-        let tempMB = Double(sizes.temp) / 1024 / 1024
-        let staticMB = Double(sizes.static) / 1024 / 1024
-        let alert = UIAlertController(
-            title: "💾 四级缓存管理",
-            message: String(format: "一级内存：80MB上限\n二级瞬时缓存：%.1fMB（30分钟过期）\n三级持久缓存：%.1fMB（7天过期）", tempMB, staticMB),
-            preferredStyle: .actionSheet
-        )
-        alert.addAction(UIAlertAction(title: "🗑 清理全部缓存", style: .destructive) { _ in
-            self.fourLevelCache.removeAllCachedResponses()
-            self.showToast("已清理全部四级缓存")
-        })
-        alert.addAction(UIAlertAction(title: "⚡ 仅清理内存缓存", style: .default) { _ in
-            self.fourLevelCache.clearMemoryCache()
-            self.showToast("已清理一级内存缓存")
-        })
-        alert.addAction(UIAlertAction(title: "📄 仅清理动态页面缓存", style: .default) { _ in
-            self.fourLevelCache.clearTempCache()
-            self.showToast("已清理二级瞬时缓存")
-        })
-        alert.addAction(UIAlertAction(title: "🖼 仅清理静态资源缓存", style: .default) { _ in
-            self.fourLevelCache.clearStaticCache()
-            self.showToast("已清理三级持久缓存")
-        })
-        if let host = currentWebView.url?.host {
-            alert.addAction(UIAlertAction(title: "📍 清理当前站点缓存（\(host)）", style: .default) { _ in
-                self.fourLevelCache.clearCacheForSite(host)
-                self.showToast("已清理 \(host) 缓存")
-                self.currentWebView.reload()
-            })
-        }
+        let cacheVC = CacheManagerViewController()
+        cacheVC.modalPresentationStyle = .fullScreen
+        present(cacheVC, animated: true)
+    }
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         if let popover = alert.popoverPresentationController {
             popover.sourceView = translateButton
