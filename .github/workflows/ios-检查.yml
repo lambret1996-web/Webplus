@@ -32,8 +32,8 @@ jobs:
       - name: 选择 Xcode 版本
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
-      # 4. 编译检查（输出到控制台 + 保存为 txt）
-      - name: 编译项目-模拟器（语法检查）
+      # 4. 编译检查（真机架构，语法+架构验证一次完成）
+      - name: 编译项目（真机架构语法检查）
         run: |
           if ls *.xcworkspace 1> /dev/null 2>&1; then
             PROJ="*.xcworkspace"
@@ -45,13 +45,12 @@ jobs:
             echo "错误：未找到 Xcode 工程文件！"
             exit 1
           fi
-          echo "正在编译（模拟器）..."
+          echo "正在编译（真机arm64）..."
           xcodebuild clean build \
             $SCHEME_ARG $PROJ \
             -scheme "WebViewBrowser" \
-            -destination 'generic/platform=iOS Simulator' \
+            -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO | xcpretty || exit 1
-
       - name: 编译项目-真机（架构验证）
         run: |
           if ls *.xcworkspace 1> /dev/null 2>&1; then
