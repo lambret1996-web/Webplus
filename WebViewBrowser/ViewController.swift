@@ -4025,6 +4025,48 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             }
         }.resume()
     }
+
+    // MARK: - 工具栏位置切换
+    private func applyToolbarPosition() {
+        let position = UserDefaults.standard.string(forKey: "addressBarPosition") ?? "顶部"
+        if position == "底部" {
+            tabBarTopConstraint.isActive = false
+            tabBarBottomConstraint.isActive = true
+            webViewTopConstraint.isActive = false
+            webViewBottomConstraint.isActive = false
+            webViewTopConstraint = webViewContainer.topAnchor.constraint(equalTo: view.topAnchor)
+            webViewBottomConstraint = webViewContainer.bottomAnchor.constraint(equalTo: tabBar.topAnchor)
+            webViewTopConstraint.isActive = true
+            webViewBottomConstraint.isActive = true
+        } else {
+            tabBarBottomConstraint.isActive = false
+            tabBarTopConstraint.isActive = true
+            webViewTopConstraint.isActive = false
+            webViewBottomConstraint.isActive = false
+            webViewTopConstraint = webViewContainer.topAnchor.constraint(equalTo: tabBar.bottomAnchor)
+            webViewBottomConstraint = webViewContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            webViewTopConstraint.isActive = true
+            webViewBottomConstraint.isActive = true
+        }
+    }
+
+    // MARK: - 自定义菜单（汉化）
+    @objc private func customCopy(_ sender: Any) {
+        currentWebView.evaluateJavaScript("window.getSelection().toString()") { result, _ in
+            if let text = result as? String {
+                UIPasteboard.general.string = text
+            }
+        }
+    }
+    @objc private func customPaste(_ sender: Any) {
+        currentWebView.evaluateJavaScript("document.execCommand('paste')") { _, _ in }
+    }
+    @objc private func customCut(_ sender: Any) {
+        currentWebView.evaluateJavaScript("document.execCommand('cut')") { _, _ in }
+    }
+    @objc private func customSelectAllText(_ sender: Any) {
+        currentWebView.evaluateJavaScript("document.execCommand('selectAll')") { _, _ in }
+    }
 }
 // MARK: - UIGestureRecognizerDelegate
 extension ViewController: UIGestureRecognizerDelegate {
@@ -4087,48 +4129,6 @@ extension ViewController: UIGestureRecognizerDelegate {
         }
     }
 }
-
-    // MARK: - 工具栏位置切换
-    private func applyToolbarPosition() {
-        let position = UserDefaults.standard.string(forKey: "addressBarPosition") ?? "顶部"
-        if position == "底部" {
-            tabBarTopConstraint.isActive = false
-            tabBarBottomConstraint.isActive = true
-            webViewTopConstraint.isActive = false
-            webViewBottomConstraint.isActive = false
-            webViewTopConstraint = webViewContainer.topAnchor.constraint(equalTo: view.topAnchor)
-            webViewBottomConstraint = webViewContainer.bottomAnchor.constraint(equalTo: tabBar.topAnchor)
-            webViewTopConstraint.isActive = true
-            webViewBottomConstraint.isActive = true
-        } else {
-            tabBarBottomConstraint.isActive = false
-            tabBarTopConstraint.isActive = true
-            webViewTopConstraint.isActive = false
-            webViewBottomConstraint.isActive = false
-            webViewTopConstraint = webViewContainer.topAnchor.constraint(equalTo: tabBar.bottomAnchor)
-            webViewBottomConstraint = webViewContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-            webViewTopConstraint.isActive = true
-            webViewBottomConstraint.isActive = true
-        }
-    }
-
-    // MARK: - 自定义菜单（汉化）
-    @objc private func customCopy(_ sender: Any) {
-        currentWebView.evaluateJavaScript("window.getSelection().toString()") { result, _ in
-            if let text = result as? String {
-                UIPasteboard.general.string = text
-            }
-        }
-    }
-    @objc private func customPaste(_ sender: Any) {
-        currentWebView.evaluateJavaScript("document.execCommand('paste')") { _, _ in }
-    }
-    @objc private func customCut(_ sender: Any) {
-        currentWebView.evaluateJavaScript("document.execCommand('cut')") { _, _ in }
-    }
-    @objc private func customSelectAllText(_ sender: Any) {
-        currentWebView.evaluateJavaScript("document.execCommand('selectAll')") { _, _ in }
-    }
 
 // MARK: - WKDownloadDelegate (iOS 15+)
 @available(iOS 15.0, *)
