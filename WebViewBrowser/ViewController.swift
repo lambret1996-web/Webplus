@@ -37,7 +37,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var translateButton: UIButton!
     private var downloadButton: UIButton!
     private var downloadBadge: UILabel!
-    private var saveOfflineButton: UIButton!
     private var confirmBar: UIView?
     private var pendingDownloadURL: String?
     private var pendingDownloadName: String?
@@ -266,17 +265,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         downloadBadge.isHidden = true
         downloadBadge.translatesAutoresizingMaskIntoConstraints = false
         tabBar.addSubview(downloadBadge)
-        // 保存离线按钮（下载按钮左侧）
-        saveOfflineButton = UIButton(type: .system)
-        saveOfflineButton.setTitle("存", for: .normal)
-        saveOfflineButton.titleLabel?.font = .systemFont(ofSize: 10, weight: .bold)
-        saveOfflineButton.setTitleColor(.systemBlue, for: .normal)
-        saveOfflineButton.layer.borderWidth = 1
-        saveOfflineButton.layer.borderColor = UIColor.systemBlue.cgColor
-        saveOfflineButton.layer.cornerRadius = 11
-        saveOfflineButton.translatesAutoresizingMaskIntoConstraints = false
-        saveOfflineButton.addTarget(self, action: #selector(saveCurrentPageOffline), for: .touchUpInside)
-        tabBar.addSubview(saveOfflineButton)
         // 标签按钮（动态创建4个）
         let tabWidth: CGFloat = 50
         let tabFont: CGFloat = 10
@@ -347,11 +335,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             tabButtons[3].centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             tabButtons[3].widthAnchor.constraint(equalToConstant: tabWidth),
             tabButtons[3].heightAnchor.constraint(equalToConstant: 24),
-            // 保存离线按钮
-            saveOfflineButton.trailingAnchor.constraint(equalTo: downloadButton.leadingAnchor, constant: -3),
-            saveOfflineButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
-            saveOfflineButton.widthAnchor.constraint(equalToConstant: 22),
-            saveOfflineButton.heightAnchor.constraint(equalToConstant: 22),
             // 下载按钮
             downloadButton.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -4),
             downloadButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
@@ -1340,6 +1323,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             ("book", "书签列表", #selector(edgeMenuShowBookmarks)),
             ("clock", "历史记录", #selector(edgeMenuShowHistory)),
             ("square.and.arrow.down", "下载管理", #selector(edgeMenuShowDownloads)),
+            ("square.and.arrow.down.on.square", "保存离线网页", #selector(edgeMenuSaveOffline)),
             ("photo", "全局图片拦截", #selector(edgeMenuToggleImageBlock)),
             ("globe", "UA 切换", #selector(edgeMenuSwitchUA)),
             ("hand.raised", "广告黑名单", #selector(edgeMenuManageAdBlock)),
@@ -1646,6 +1630,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         present(panel, animated: true)
     }
     
+    @objc private func edgeMenuSaveOffline() {
+        saveCurrentPageOffline()
+        edgeMenuClose()
+    }
+
     @objc private func edgeMenuToggleImageBlock() {
         closeEdgeMenu()
         toggleGlobalImageBlock()
@@ -2328,7 +2317,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         translateButton.addGestureRecognizer(translateDoubleTap)
         // 长按翻译按钮0.8秒→弹出设置菜单
         let translateLongPress = UILongPressGestureRecognizer(target: self, action: #selector(handleTranslateLongPress(_:)))
-        translateLongPress.minimumPressDuration = 0.8
+        translateLongPress.minimumPressDuration = 0.4
         translateButton.addGestureRecognizer(translateLongPress)
         // 右边缘下滑→功能菜单
         let edgePan = UIPanGestureRecognizer(target: self, action: #selector(handleEdgeMenuPan(_:)))
@@ -2376,7 +2365,19 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // MARK: - 长按翻译按钮→设置菜单
     @objc private func handleTranslateLongPress(_ gesture: UILongPressGestureRecognizer) {
         guard gesture.state == .began else { return }
-        let alert = UIAlertController(title: "浏览器设置", message: nil, preferredStyle: .actionSheet)
+        let alert = UIAlertController(title: "翻译模式 & 浏览器设置", message: nil, preferredStyle: .actionSheet)
+        // 翻译模式切换
+        let currentMode = TranslateManager.shared.currentMode
+        let modeNames: [TranslateManager.TranslateMode: String] = [.local: "本地翻译（仅离线词库）", .online: "在线翻译（百度接口）", .mixed: "混合翻译（推荐）"]
+        for mode in [TranslateManager.TranslateMode.local, .online, .mixed] {
+            let isSelected = mode == currentMode
+            let title = isSelected ? "✓ \(modeNames[mode] ?? "")" : (modeNames[mode] ?? "")
+            alert.addAction(UIAlertAction(title: title, style: .default) { _ in
+                TranslateManager.shared.setMode(mode)
+                self.showToast("已切换为：\(modeNames[mode] ?? "")")
+            })
+        }
+        alert.addAction(UIAlertAction(title: "──────────", style: .default, handler: nil))
         // 广告拦截开关
         let adBlockTitle = adBlockEnabled ? "广告拦截：已开启（点击关闭）" : "广告拦截：已关闭（点击开启）"
         alert.addAction(UIAlertAction(title: adBlockTitle, style: .default) { _ in
@@ -3642,7 +3643,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         guard gesture.view === currentWebView else { return }
         let translation = gesture.translation(in: view)
         let screenWidth = view.bounds.width
-        let threshold = screenWidth * 0.5 // 拖拽50%触发前进/后退
+        let threshold = screenWidth * 0.3 // 拖拽30%触发前进/后退
         
         switch gesture.state {
         case .began:
@@ -3651,7 +3652,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             // 跟手：页面跟随手指水平平移
             let dx = translation.x
             if abs(dx) > abs(translation.y) * 1.2 {
-                let limitedDx = max(-screenWidth * 0.5, min(screenWidth * 0.5, dx))
+                let limitedDx = max(-screenWidth * 0.3, min(screenWidth * 0.3, dx))
                 currentWebView.transform = CGAffineTransform(translationX: limitedDx, y: 0)
             }
         case .ended:
@@ -3687,12 +3688,38 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             restoreOriginalText()
             return
         }
-        // 根据翻译模式执行：混合模式走JS离线翻译，在线模式走原有百度翻译
+        // 根据翻译模式执行
         let mode = TranslateManager.shared.currentMode
-        if mode == .hybrid {
-            startHybridTranslation()
-        } else {
+        switch mode {
+        case .local:
+            startLocalTranslation()
+        case .online:
             startTranslation()
+        case .mixed:
+            startHybridTranslation()
+        }
+    }
+    
+    // MARK: - 本地翻译（仅JS词库，无自动降级）
+    private func startLocalTranslation() {
+        let targetWebView = currentWebView
+        let targetIndex = activeIndex
+        isTranslating = true
+        updateTranslateButtonState()
+        showTranslateToast("正在本地翻译...")
+        
+        TranslateManager.shared.translateLocalOnly(webView: targetWebView) { [weak self] success, reason in
+            guard let self = self else { return }
+            DispatchQueue.main.async {
+                self.isTranslating = false
+                if success {
+                    self.isTranslated[targetIndex] = true
+                    self.showTranslateToast("本地翻译完成")
+                } else {
+                    self.showTranslateToast("本地翻译失败：\(reason ?? "未知错误")")
+                }
+                self.updateTranslateButtonState()
+            }
         }
     }
     
@@ -3704,17 +3731,21 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         updateTranslateButtonState()
         showTranslateToast("正在离线翻译...")
         
-        TranslateManager.shared.translatePageOffline(webView: targetWebView) { [weak self] success in
+        TranslateManager.shared.translateMixed(webView: targetWebView, onlineFallback: { [weak self] in
+            DispatchQueue.main.async {
+                self?.startTranslation()
+            }
+        }) { [weak self] success, reason in
             guard let self = self else { return }
             DispatchQueue.main.async {
                 self.isTranslating = false
                 if success {
                     self.isTranslated[targetIndex] = true
-                    self.showTranslateToast("翻译完成（文字离线）")
+                    self.showTranslateToast("混合翻译完成（文字离线）")
+                } else if reason == "已降级在线翻译" {
+                    // 已自动降级到在线翻译，不重复更新状态
                 } else {
-                    // 离线翻译失败，降级到在线翻译
-                    self.showTranslateToast("离线翻译失败，切换在线翻译...")
-                    self.startTranslation()
+                    self.showTranslateToast("翻译失败：\(reason ?? "未知错误")")
                 }
                 self.updateTranslateButtonState()
             }

@@ -120,8 +120,23 @@ class CacheManagerViewController: UIViewController, UIGestureRecognizerDelegate 
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        // 重新激活导航侧滑返回手势（解决自定义返回按钮导致手势失效）
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+        navigationController?.interactivePopGestureRecognizer?.delegate = self
         // 每次进入页面刷新设备存储状态（实时更新）
         refreshCacheData()
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // 离开页面时解绑代理，防止影响浏览器主页手势
+        navigationController?.interactivePopGestureRecognizer?.delegate = nil
+    }
+    
+    // 导航栈深度大于1才允许侧滑返回
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let nav = navigationController else { return false }
+        return nav.viewControllers.count > 1
     }
 
     // MARK: - 设置UI

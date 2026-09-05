@@ -16,6 +16,7 @@
 		OFFLINECACHE_ID /* OfflineCacheManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = OFFLINECACHE_REF /* OfflineCacheManager.swift */; };
 		TRANSLATE_ID /* TranslateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = TRANSLATE_REF /* TranslateManager.swift */; };
 		DICT_ID /* en_zh_dict.json in Resources */ = {isa = PBXBuildFile; fileRef = DICT_REF /* en_zh_dict.json */; };
+		GITHUBDICT_ID /* github_dict.json in Resources */ = {isa = PBXBuildFile; fileRef = GITHUBDICT_REF /* github_dict.json */; };
 		FOURLEVELCACHE_ID /* FourLevelCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FOURLEVELCACHE_REF /* FourLevelCache.swift */; };
 		APPPROXY_PROVIDER_BUILD /* AppProxyProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = APPPROXY_PROVIDER_REF /* AppProxyProvider.swift */; };
 		VLESSCLIENT_BUILD /* VLESSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = VLESSCLIENT_REF /* VLESSClient.swift */; };
@@ -35,6 +36,7 @@
 		OFFLINECACHE_REF /* OfflineCacheManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineCacheManager.swift; sourceTree = "<group>"; };
 		TRANSLATE_REF /* TranslateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslateManager.swift; sourceTree = "<group>"; };
 		DICT_REF /* en_zh_dict.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = en_zh_dict.json; sourceTree = "<group>"; };
+		GITHUBDICT_REF /* github_dict.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = github_dict.json; sourceTree = "<group>"; };
 		FOURLEVELCACHE_REF /* FourLevelCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FourLevelCache.swift; sourceTree = "<group>"; };
 		ASSETS_REF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		LAUNCHSCREEN_REF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -88,6 +90,7 @@ APPPROXY_FRAMEWORKS /* Frameworks */ = {
 				OFFLINECACHE_REF /* OfflineCacheManager.swift */,
 				TRANSLATE_REF /* TranslateManager.swift */,
 				DICT_REF /* en_zh_dict.json */,
+				GITHUBDICT_REF /* github_dict.json */,
 				FOURLEVELCACHE_REF /* FourLevelCache.swift */,
 				SCENEDELEGATE_REF /* SceneDelegate.swift */,
 				VIEWCONTROLLER_REF /* ViewController.swift */,
@@ -203,7 +206,8 @@ APPPROXY_TARGET /* AppProxyExtension */ = {
 				ASSETS_ID /* Assets.xcassets in Resources */,
 				LAUNCHSCREEN_ID /* LaunchScreen.storyboard in Resources */,
 			
-				DICT_ID /* en_zh_dict.json in Resources */,);
+				DICT_ID /* en_zh_dict.json in Resources */,
+				GITHUBDICT_ID /* github_dict.json in Resources */,);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
