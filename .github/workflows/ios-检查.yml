@@ -1,10 +1,8 @@
 name: 手动 iOS 语法与代码规范检查
 
-# 仅保留 workflow_dispatch，实现纯手动触发
 on:
   workflow_dispatch:
     inputs:
-      # 可选：添加一个输入框，让你手动选择要检查的分支（默认 main）
       branch_to_check:
         description: '要检查的分支名称（可选）'
         required: false
@@ -20,17 +18,19 @@ jobs:
       - name: 检出代码仓库
         uses: actions/checkout@v4
         with:
-          # 如果手动输入了分支，则检出该分支；否则检出默认分支
           ref: ${{ github.event.inputs.branch_to_check || 'main' }}
 
-      # 2. 设置 Xcode 环境
+      # 2. 创建日志目录
+      - name: 创建日志目录
+        run: mkdir -p error-logs
+
+      # 3. 设置 Xcode 环境
       - name: 选择 Xcode 版本
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
-      # 3. 编译检查（语法错误拦截）
+      # 4. 编译检查（输出到控制台 + 保存为 txt）
       - name: 编译项目（语法检查）
         run: |
-          # 自动查找 .xcworkspace 或 .xcodeproj
           if ls *.xcworkspace 1> /dev/null 2>&1; then
             PROJ="*.xcworkspace"
             SCHEME_ARG="-workspace"
@@ -44,21 +44,37 @@ jobs:
 
           echo "正在编译 $PROJ..."
 
-          # 执行编译，仅编译不运行，用于检查语法
-          # 注意：如果你的项目有多个 Scheme，可能需要指定 -scheme "WebViewBrowser"
+          # tee 让输出同时显示在控制台并保存到 txt 文件
           xcodebuild clean build \
             $SCHEME_ARG $PROJ \
             -scheme "WebViewBrowser" \
             -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO | xcpretty || exit 1
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee error-logs/编译日志.txt | xcpretty || exit 1
 
-      # 4. 安装 SwiftLint
+      # 5. 安装 SwiftLint
       - name: 安装 SwiftLint
         run: brew install swiftlint
 
-      # 5. SwiftLint 检查（仅拦截错误）
+      # 6. SwiftLint 检查（输出到控制台 + 保存为 txt）
       - name: 运行 SwiftLint（仅拦截错误）
         run: |
-          # 直接运行 lint，如果配置文件里定义了 error 级别违规，
-          # swiftlint 会返回非 0 退出码，导致 Action 失败
-          swiftlint lint --quiet
+          swiftlint lint --quiet 2>&1 | tee error-logs/代码规范检查.txt
+          exit ${PIPESTATUS[0]}
+
+      # 7. 上传编译日志（单独文件）
+      - name: 上传编译日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 编译日志
+          path: error-logs/编译日志.txt
+          retention-days: 30
+
+      # 8. 上传代码规范检查日志（单独文件）
+      - name: 上传代码规范检查日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 代码规范检查日志
+          path: error-logs/代码规范检查.txt
+          retention-days: 30
