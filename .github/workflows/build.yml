@@ -222,8 +222,16 @@ jobs:
             -allowProvisioningUpdates
           ls -lh build/export/
           
-          # 手动将Extension添加到IPA中
+          # 手动将Extension添加到IPA中（先签名再添加）
           if [ -d "build/AppProxyExtension.appex" ]; then
+            echo "给Extension做ad-hoc签名..."
+            # 复制entitlements到Extension
+            cp AppProxyExtension/AppProxyExtension.entitlements build/AppProxyExtension.appex/entitlements.plist
+            # ad-hoc签名（TrollStore支持）
+            codesign --force --sign - --entitlements build/AppProxyExtension.appex/entitlements.plist --timestamp=none build/AppProxyExtension.appex || echo "签名警告，继续"
+            rm -f build/AppProxyExtension.appex/entitlements.plist
+            echo "Extension签名完成"
+            
             echo "将Extension添加到IPA中..."
             cd build/export
             unzip -q ${APP_NAME}.ipa -d ipa_temp
