@@ -154,7 +154,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             UIMenuItem(title: "复制", action: #selector(customCopy(_:))),
             UIMenuItem(title: "粘贴", action: #selector(customPaste(_:))),
             UIMenuItem(title: "剪切", action: #selector(customCut(_:))),
-            UIMenuItem(title: "全选", action: #selector(customSelectAll(_:)))
+            UIMenuItem(title: "全选", action: #selector(customSelectAllText(_:)))
         ]
         switchToTab(index: 0)
         loadInitialPages()
@@ -4088,6 +4088,48 @@ extension ViewController: UIGestureRecognizerDelegate {
     }
 }
 
+    // MARK: - 工具栏位置切换
+    private func applyToolbarPosition() {
+        let position = UserDefaults.standard.string(forKey: "addressBarPosition") ?? "顶部"
+        if position == "底部" {
+            tabBarTopConstraint.isActive = false
+            tabBarBottomConstraint.isActive = true
+            webViewTopConstraint.isActive = false
+            webViewBottomConstraint.isActive = false
+            webViewTopConstraint = webViewContainer.topAnchor.constraint(equalTo: view.topAnchor)
+            webViewBottomConstraint = webViewContainer.bottomAnchor.constraint(equalTo: tabBar.topAnchor)
+            webViewTopConstraint.isActive = true
+            webViewBottomConstraint.isActive = true
+        } else {
+            tabBarBottomConstraint.isActive = false
+            tabBarTopConstraint.isActive = true
+            webViewTopConstraint.isActive = false
+            webViewBottomConstraint.isActive = false
+            webViewTopConstraint = webViewContainer.topAnchor.constraint(equalTo: tabBar.bottomAnchor)
+            webViewBottomConstraint = webViewContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            webViewTopConstraint.isActive = true
+            webViewBottomConstraint.isActive = true
+        }
+    }
+
+    // MARK: - 自定义菜单（汉化）
+    @objc private func customCopy(_ sender: Any) {
+        currentWebView.evaluateJavaScript("window.getSelection().toString()") { result, _ in
+            if let text = result as? String {
+                UIPasteboard.general.string = text
+            }
+        }
+    }
+    @objc private func customPaste(_ sender: Any) {
+        currentWebView.evaluateJavaScript("document.execCommand('paste')") { _, _ in }
+    }
+    @objc private func customCut(_ sender: Any) {
+        currentWebView.evaluateJavaScript("document.execCommand('cut')") { _, _ in }
+    }
+    @objc private func customSelectAllText(_ sender: Any) {
+        currentWebView.evaluateJavaScript("document.execCommand('selectAll')") { _, _ in }
+    }
+
 // MARK: - WKDownloadDelegate (iOS 15+)
 @available(iOS 15.0, *)
 extension ViewController: WKDownloadDelegate {
@@ -4178,6 +4220,6 @@ extension ViewController: WKDownloadDelegate {
     @objc private func customCut(_ sender: Any) {
         currentWebView.evaluateJavaScript("document.execCommand('cut')") { _, _ in }
     }
-    @objc private func customSelectAll(_ sender: Any) {
+    @objc private func customSelectAllText(_ sender: Any) {
         currentWebView.evaluateJavaScript("document.execCommand('selectAll')") { _, _ in }
     }
