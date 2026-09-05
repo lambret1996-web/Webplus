@@ -3852,13 +3852,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
     }
 
-    // iOS 15+：导航响应变为下载时调用，必须设置 delegate 才能开始下载
-    @available(iOS 15.0, *)
-    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-        download.delegate = self
-        print("[Download] 导航响应已转换为下载任务")
-    }
-
     // MARK: - WKNavigationDelegate
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if let index = webViews.firstIndex(of: webView) {
@@ -4129,6 +4122,12 @@ extension ViewController: UIGestureRecognizerDelegate {
 @available(iOS 15.0, *)
 extension ViewController: WKDownloadDelegate {
     
+    // iOS 15+：导航响应变为下载时调用，必须设置 delegate 才能开始下载
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+        print("[Download] 导航响应已转换为下载任务")
+    }
+
     @objc func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
         let fileManager = FileManager.default
         let docsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
