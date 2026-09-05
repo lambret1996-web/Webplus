@@ -2357,58 +2357,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         cacheVC.modalPresentationStyle = .fullScreen
         present(cacheVC, animated: true)
     }
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        if let popover = alert.popoverPresentationController {
-            popover.sourceView = translateButton
-            popover.sourceRect = translateButton.bounds
-        }
-        present(alert, animated: true)
-    }
     
     // MARK: - 缓存管理（含存储状态）
+    // MARK: - 缓存管理（含存储状态）- 已改为全屏页面
     private func showCacheManagerWithStorage() {
-        // 获取手机存储状态
-        let fileManager = FileManager.default
-        var totalSpace: Int64 = 0
-        var freeSpace: Int64 = 0
-        if let attrs = try? fileManager.attributesOfFileSystem(forPath: NSHomeDirectory()) {
-            totalSpace = attrs[.systemSize] as? Int64 ?? 0
-            freeSpace = attrs[.systemFreeSize] as? Int64 ?? 0
-        }
-        let usedSpace = totalSpace - freeSpace
-        let totalGB = Double(totalSpace) / 1024 / 1024 / 1024
-        let usedGB = Double(usedSpace) / 1024 / 1024 / 1024
-        let freeGB = Double(freeSpace) / 1024 / 1024 / 1024
-        
-        // 获取浏览器缓存大小
-        let sizes = fourLevelCache.cacheSize()
-        let cacheTotal = sizes.temp + sizes.static
-        let cacheMB = Double(cacheTotal) / 1024 / 1024
-        let tempMB = Double(sizes.temp) / 1024 / 1024
-        let staticMB = Double(sizes.static) / 1024 / 1024
-        
-        let message = String(format: """
-        📱 手机存储状态
-        总容量：%.1f GB
-        已使用：%.1f GB
-        剩余：%.1f GB
-        
-        📦 浏览器缓存
-        缓存总计：%.1f MB
-        动态页面：%.1f MB
-        静态资源：%.1f MB
-        """, totalGB, usedGB, freeGB, cacheMB, tempMB, staticMB)
-        
-        let alert = UIAlertController(title: "💾 缓存管理", message: message, preferredStyle: .actionSheet)
-        
-        // 清空当前站点缓存
-        if let host = currentWebView.url?.host {
-            alert.addAction(UIAlertAction(title: "📍 清空当前站点缓存（\(host)）", style: .default) { _ in
-                self.fourLevelCache.clearCacheForSite(host)
-                self.currentWebView.reload()
-                self.showToast("已清空 \(host) 缓存")
-            })
-        }
+        showCacheManager()
+    }
         
         // 一键清空全部缓存
         alert.addAction(UIAlertAction(title: "🗑 一键清空浏览器全部缓存", style: .destructive) { _ in
