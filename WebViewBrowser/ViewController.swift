@@ -2089,11 +2089,46 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     
     @objc private func edgeMenuShowSettings() {
         closeEdgeMenu()
-        // 显示设置菜单（复用翻译键长按菜单）
-        handleTranslateLongPress(UILongPressGestureRecognizer())
+        showAppSettings()
     }
     
-    private func setEdgeMenu(open: Bool, duration: TimeInterval = 0.3) {
+    // MARK: - 独立设置页面
+    private func showAppSettings() {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+        let currentEngine = UserDefaults.standard.string(forKey: "searchEngine") ?? "Google"
+        let addressPos = UserDefaults.standard.string(forKey: "addressBarPosition") ?? "顶部"
+        
+        let alert = UIAlertController(title: "⚙️ 浏览器设置", message: "版本 v\(version)", preferredStyle: .actionSheet)
+        
+        // 版本号
+        alert.addAction(UIAlertAction(title: "ℹ️ 当前版本：v\(version)", style: .default) { _ in
+            self.showToast("当前版本：v\(version)")
+        })
+        
+        // 搜索引擎
+        alert.addAction(UIAlertAction(title: "🔍 搜索引擎（当前：\(currentEngine)）", style: .default) { _ in
+            self.showSearchEngineSelector()
+        })
+        
+        // 地址栏位置
+        alert.addAction(UIAlertAction(title: "📍 地址栏位置（当前：\(addressPos)）", style: .default) { _ in
+            self.showAddressBarPositionSelector()
+        })
+        
+        // 默认浏览器
+        alert.addAction(UIAlertAction(title: "🌐 设置为默认浏览器", style: .default) { _ in
+            self.setAsDefaultBrowser()
+        })
+        
+        alert.addAction(UIAlertAction(title: "关闭", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+    
+    private func setEdgeMenu(open: Bool, duration: TimeInterval = 1.0) {
         edgeMenuIsOpen = open
         let menuWidth = view.bounds.width * 0.50
         edgeMenuLeadingConstraint.constant = open ? -menuWidth : 0
@@ -2216,25 +2251,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         // 四级缓存管理
         alert.addAction(UIAlertAction(title: "💾 缓存管理（四级缓存）", style: .default) { _ in
             self.showCacheManager()
-        })
-        // 搜索引擎切换
-        let currentEngine = UserDefaults.standard.string(forKey: "searchEngine") ?? "Google"
-        alert.addAction(UIAlertAction(title: "🔍 搜索引擎（当前：\(currentEngine)）", style: .default) { _ in
-            self.showSearchEngineSelector()
-        })
-        // 地址栏位置
-        let addressBarPosition = UserDefaults.standard.string(forKey: "addressBarPosition") ?? "顶部"
-        alert.addAction(UIAlertAction(title: "📍 地址栏位置（当前：\(addressBarPosition)）", style: .default) { _ in
-            self.showAddressBarPositionSelector()
-        })
-        // 默认浏览器设置
-        alert.addAction(UIAlertAction(title: "🌐 设置为默认浏览器", style: .default) { _ in
-            self.setAsDefaultBrowser()
-        })
-        // 版本信息
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
-        alert.addAction(UIAlertAction(title: "ℹ️ 版本号：v\(version)", style: .default) { _ in
-            self.showToast("当前版本：v\(version)")
         })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         if let popover = alert.popoverPresentationController {
@@ -3456,14 +3472,14 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             UIView.animate(withDuration: 0.25, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.5, options: .curveEaseOut) {
                 self.currentWebView.transform = .identity
             }
-            // 左滑（手指从右往左）→ 网页后退
-            if dx < -threshold {
+            // 右滑（手指从左往右）→ 网页后退
+            if dx > threshold {
                 if currentWebView.canGoBack {
                     currentWebView.goBack()
                 }
             }
-            // 右滑（手指从左往右）→ 网页前进
-            else if dx > threshold {
+            // 左滑（手指从右往左）→ 网页前进
+            else if dx < -threshold {
                 if currentWebView.canGoForward {
                     currentWebView.goForward()
                 }
