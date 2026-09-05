@@ -16,6 +16,10 @@ opt_in_rules:
 disabled_rules:
   - trailing_whitespace
   - todo # 忽略 TODO 标记
+  - identifier_name # 允许短变量名 i, d, t 等
+  - large_tuple # 允许大元组
+  - cyclomatic_complexity # 允许复杂函数
+  - function_parameter_count # 允许多参数函数
 
 # 这里的规则设为 error，CI 才会报错中断
 force_cast: error       # 禁止强制类型转换 (as!)
