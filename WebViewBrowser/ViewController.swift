@@ -28,7 +28,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private let customTitlesKey = "customWindowTitles"
     private let customURLsKey = "customWindowURLs"
     private let tabBarHeight: CGFloat = 28
-    private let translateButtonSize: CGFloat = 17
+    private let translateButtonSize: CGFloat = 18
     private let maxTranslateSegments = 5000
     private let refreshTriggerDistance: CGFloat = 70
     // MARK: - UI 组件
@@ -270,25 +270,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         translateButton.translatesAutoresizingMaskIntoConstraints = false
         translateButton.addTarget(self, action: #selector(translateTapped), for: .touchUpInside)
         tabBar.addSubview(translateButton)
-        // 下载按钮
-        downloadButton = UIButton(type: .system)
-        downloadButton.setImage(UIImage(systemName: "arrow.down.circle"), for: .normal)
-        downloadButton.tintColor = .systemBlue
-        downloadButton.translatesAutoresizingMaskIntoConstraints = false
-        downloadButton.addTarget(self, action: #selector(downloadButtonTapped), for: .touchUpInside)
-        tabBar.addSubview(downloadButton)
-        // 下载角标
-        downloadBadge = UILabel()
-        downloadBadge.text = "0"
-        downloadBadge.font = .systemFont(ofSize: 9, weight: .bold)
-        downloadBadge.textColor = .white
-        downloadBadge.backgroundColor = .systemRed
-        downloadBadge.textAlignment = .center
-        downloadBadge.layer.cornerRadius = 8
-        downloadBadge.layer.masksToBounds = true
-        downloadBadge.isHidden = true
-        downloadBadge.translatesAutoresizingMaskIntoConstraints = false
-        tabBar.addSubview(downloadBadge)
+        // 下载按钮已移除（v16.8），下载管理入口移至功能菜单
+        // 下载角标已移除（v16.8）
         // 标签按钮（动态创建4个）
         let tabWidth: CGFloat = 50
         let tabFont: CGFloat = 10
@@ -339,13 +322,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             tabButtons[1].centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             tabButtons[1].widthAnchor.constraint(equalToConstant: 42),
             tabButtons[1].heightAnchor.constraint(equalToConstant: 24),
-            // 翻译按钮：CF右边距10px
-            translateButton.leadingAnchor.constraint(equalTo: tabButtons[1].trailingAnchor, constant: 1),
-            translateButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
-            translateButton.widthAnchor.constraint(equalToConstant: translateButtonSize),
-            translateButton.heightAnchor.constraint(equalToConstant: translateButtonSize),
-            // 网址输入框：翻译按钮右边距5px，Google左边距5px
-            urlTextField.leadingAnchor.constraint(equalTo: translateButton.trailingAnchor, constant: 5),
+            // 网址输入框：CF右边距5，Google左边距5
+            urlTextField.leadingAnchor.constraint(equalTo: tabButtons[1].trailingAnchor, constant: 5),
             urlTextField.trailingAnchor.constraint(equalTo: tabButtons[2].leadingAnchor, constant: -5),
             urlTextField.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             urlTextField.heightAnchor.constraint(equalToConstant: 20),
@@ -355,20 +333,15 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             tabButtons[2].widthAnchor.constraint(equalToConstant: tabWidth),
             tabButtons[2].heightAnchor.constraint(equalToConstant: 24),
             // 右1：YouTube
-            tabButtons[3].trailingAnchor.constraint(equalTo: downloadButton.leadingAnchor, constant: -2),
+            tabButtons[3].trailingAnchor.constraint(equalTo: translateButton.leadingAnchor, constant: -2),
             tabButtons[3].centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             tabButtons[3].widthAnchor.constraint(equalToConstant: tabWidth),
             tabButtons[3].heightAnchor.constraint(equalToConstant: 24),
-            // 下载按钮
-            downloadButton.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -4),
-            downloadButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
-            downloadButton.widthAnchor.constraint(equalToConstant: 22),
-            downloadButton.heightAnchor.constraint(equalToConstant: 22),
-            // 下载角标
-            downloadBadge.topAnchor.constraint(equalTo: downloadButton.topAnchor, constant: -4),
-            downloadBadge.trailingAnchor.constraint(equalTo: downloadButton.trailingAnchor, constant: 2),
-            downloadBadge.widthAnchor.constraint(equalToConstant: 16),
-            downloadBadge.heightAnchor.constraint(equalToConstant: 16)
+            // 翻译按钮（最右边）
+            translateButton.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -4),
+            translateButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
+            translateButton.widthAnchor.constraint(equalToConstant: translateButtonSize),
+            translateButton.heightAnchor.constraint(equalToConstant: translateButtonSize)
         ])
     }
     // MARK: - 网址输入框
@@ -3568,6 +3541,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     }
     
     func updateDownloadBadge() {
+        // v16.8: 工具栏下载角标已移除，此方法保留为空操作
+        guard downloadBadge != nil else { return }
         let count = DownloadManager.shared.activeCount()
         if count > 0 {
             downloadBadge.text = "\(count)"
