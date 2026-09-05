@@ -59,24 +59,6 @@ jobs:
           xcodebuild -showsdks | grep iphoneos || true
           echo "---"
           xcodebuild -list -project "${APP_NAME}.xcodeproj"
-
-      - name: 自动递增版本号
-        run: |
-          CURRENT_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" WebViewBrowser/Info.plist)
-          echo "当前版本: $CURRENT_VERSION"
-          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
-          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
-          NEW_MINOR=$((MINOR + 1))
-          NEW_VERSION="$MAJOR.$NEW_MINOR"
-          echo "新版本: $NEW_VERSION"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $NEW_VERSION" WebViewBrowser/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEW_VERSION" WebViewBrowser/Info.plist
-          echo "VERSION=$NEW_VERSION" >> $GITHUB_ENV
-          echo "版本号已自动递增到 $NEW_VERSION"
-
-      # ============================================================
-      # 无签名构建（TrollStore 安装用）
-      # ============================================================
       - name: Build (Unsigned)
         run: |
           xcodebuild \
@@ -109,6 +91,12 @@ jobs:
           ls -lah "${APP_NAME}.ipa"
 
       - name: Upload IPA
+      - name: 读取版本号
+        run: |
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" WebViewBrowser/Info.plist)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "当前版本: $VERSION"
+
         uses: actions/upload-artifact@v5
         with:
           name: ${{ env.APP_NAME }}-unsigned-ipa

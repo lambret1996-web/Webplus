@@ -1,729 +1,684 @@
 //
 //  CacheManagerViewController.swift
-//  轻量浏览器 - 全屏四级缓存管理
+//  轻量浏览器 - 全屏四级缓存管理（卡片式）
+//
+//  功能：
+//  - 右滑屏幕30%返回浏览器
+//  - 卡片形式展示四级缓存
+//  - 删除后实时刷新缓存总量
+//  - 删除时显示进度条动画
+//  - 长按深度清理按钮 → 全部删除全部缓存
 //
 
 import UIKit
 
 class CacheManagerViewController: UIViewController {
-    
-    // MARK: - 数据模型
-    struct CacheLevelInfo {
-        let level: Int
-        let name: String
-        let description: String
-        var size: Int64
-        let color: UIColor
-        let canOneKeyClear: Bool
-    }
-    
-    // MARK: - 属性
-    private var cacheLevels: [CacheLevelInfo] = []
+
+    // MARK: - UI 元素
     private let scrollView = UIScrollView()
     private let contentView = UIView()
-    
+
+    // 标题
+    private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
+
+    // 设备存储卡片
+    private let storageCard = UIView()
+    private let storageTitleLabel = UILabel()
+    private let storageProgressView = UIProgressView(progressViewStyle: .default)
+    private let storageDetailLabel = UILabel()
+
+    // 缓存总览卡片
+    private let overviewCard = UIView()
+    private let overviewTitleLabel = UILabel()
+    private let overviewTotalLabel = UILabel()
+    private let overviewCleanableLabel = UILabel()
+    private let overviewValidLabel = UILabel()
+
+    // 四级缓存卡片数组
+    private var cacheCards: [UIView] = []
+    private var cacheNameLabels: [UILabel] = []
+    private var cacheSizeLabels: [UILabel] = []
+    private var cacheDescLabels: [UILabel] = []
+    private var cacheCleanButtons: [UIButton] = []
+    private var cacheProgressViews: [UIProgressView] = []
+
+    // 底部按钮
+    private let quickCleanButton = UIButton(type: .system)
+    private let deepCleanButton = UIButton(type: .system)
+
+    // 删除进度遮罩
+    private let progressOverlay = UIView()
+    private let progressIndicator = UIActivityIndicatorView(style: .large)
+    private let progressLabel = UILabel()
+    private let progressBar = UIProgressView(progressViewStyle: .default)
+
+    // MARK: - 缓存数据
+    private let cacheNames = ["一级·实时临时缓存", "二级·本次会话缓存", "三级·持久资源缓存", "四级·离线留存缓存"]
+    private let cacheDescs = [
+        "当前页面正在使用的临时数据，关闭页面即失效",
+        "本次启动期间的页面缓存，退出App后自动清理",
+        "图片/JS/CSS等静态资源，24小时后自动过期",
+        "用户主动保存的离线页面，永久保留不自动清理"
+    ]
+    private let cacheColors: [UIColor] = [
+        UIColor(red: 0.20, green: 0.60, blue: 0.93, alpha: 1.0),
+        UIColor(red: 0.35, green: 0.75, blue: 0.45, alpha: 1.0),
+        UIColor(red: 0.95, green: 0.65, blue: 0.15, alpha: 1.0),
+        UIColor(red: 0.55, green: 0.45, blue: 0.85, alpha: 1.0)
+    ]
+
+    private var cacheSizes: [Int64] = [0, 0, 0, 0]
+    private var isCleaning = false
+
     // MARK: - 生命周期
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.backgroundColor = UIColor(red: 0.95, green: 0.96, blue: 0.98, alpha: 1.0)
+
         setupUI()
-        loadCacheData()
+        setupSwipeGesture()
+        refreshCacheData()
     }
-    
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        navigationController?.setNavigationBarHidden(true, animated: animated)
+
+    // MARK: - 设置右滑返回手势
+    private func setupSwipeGesture() {
+        let swipeRight = UIPanGestureRecognizer(target: self, action: #selector(handleSwipeRight(_:)))
+        view.addGestureRecognizer(swipeRight)
     }
-    
-    // MARK: - UI 设置
+
+    private var swipeStartX: CGFloat = 0
+
+    @objc private func handleSwipeRight(_ gesture: UIPanGestureRecognizer) {
+        let translation = gesture.translation(in: view)
+        let velocity = gesture.velocity(in: view)
+
+        switch gesture.state {
+        case .began:
+            swipeStartX = translation.x
+        case .changed:
+            let deltaX = translation.x - swipeStartX
+            if deltaX > 0 {
+                let progress = min(deltaX / (view.bounds.width * 0.3), 1.0)
+                view.transform = CGAffineTransform(translationX: deltaX, y: 0)
+                view.alpha = 1.0 - progress * 0.3
+            }
+        case .ended:
+            let deltaX = translation.x - swipeStartX
+            let threshold = view.bounds.width * 0.3
+            if deltaX > threshold || velocity.x > 500 {
+                UIView.animate(withDuration: 0.25, animations: {
+                    self.view.transform = CGAffineTransform(translationX: self.view.bounds.width, y: 0)
+                    self.view.alpha = 0
+                }) { _ in
+                    self.dismiss(animated: false)
+                }
+            } else {
+                UIView.animate(withDuration: 0.2) {
+                    self.view.transform = .identity
+                    self.view.alpha = 1.0
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    // MARK: - 设置UI
     private func setupUI() {
-        view.backgroundColor = .systemBackground
-        
-        // 滚动视图
         scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.alwaysBounceVertical = true
         view.addSubview(scrollView)
-        
+
         contentView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.addSubview(contentView)
-        
+
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: view.topAnchor),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            
             contentView.topAnchor.constraint(equalTo: scrollView.topAnchor),
             contentView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
             contentView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
             contentView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
             contentView.widthAnchor.constraint(equalTo: scrollView.widthAnchor)
         ])
-        
-        setupHeader()
-        setupDeviceStorageCard()
-        setupCacheOverviewCard()
-        setupCacheLevelList()
-        setupBottomButtons()
-    }
-    
-    // MARK: - 顶部标题
-    private func setupHeader() {
-        let headerView = UIView()
-        headerView.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(headerView)
-        
-        // 关闭按钮
-        let closeButton = UIButton(type: .system)
-        closeButton.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
-        closeButton.tintColor = .secondaryLabel
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
-        headerView.addSubview(closeButton)
-        
+
         // 标题
-        let titleLabel = UILabel()
         titleLabel.text = "缓存资源管理中心"
-        titleLabel.font = .systemFont(ofSize: 22, weight: .bold)
-        titleLabel.textAlignment = .center
+        titleLabel.font = UIFont.boldSystemFont(ofSize: 22)
+        titleLabel.textColor = .darkText
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        headerView.addSubview(titleLabel)
-        
-        // 副标题
-        let subtitleLabel = UILabel()
-        subtitleLabel.text = "四级分层缓存 · 精准清理不丢有效资源"
-        subtitleLabel.font = .systemFont(ofSize: 13)
-        subtitleLabel.textColor = .secondaryLabel
-        subtitleLabel.textAlignment = .center
+        contentView.addSubview(titleLabel)
+
+        subtitleLabel.text = "右滑屏幕30%返回浏览器"
+        subtitleLabel.font = UIFont.systemFont(ofSize: 13)
+        subtitleLabel.textColor = .gray
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        headerView.addSubview(subtitleLabel)
-        
+        contentView.addSubview(subtitleLabel)
+
+        // 设备存储卡片
+        setupCard(storageCard)
+        storageTitleLabel.text = "📱 设备存储状态"
+        storageTitleLabel.font = UIFont.boldSystemFont(ofSize: 16)
+        storageTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        storageCard.addSubview(storageTitleLabel)
+
+        storageProgressView.progressTintColor = UIColor(red: 0.20, green: 0.60, blue: 0.93, alpha: 1.0)
+        storageProgressView.trackTintColor = UIColor(white: 0.9, alpha: 1.0)
+        storageProgressView.layer.cornerRadius = 4
+        storageProgressView.clipsToBounds = true
+        storageProgressView.translatesAutoresizingMaskIntoConstraints = false
+        storageCard.addSubview(storageProgressView)
+
+        storageDetailLabel.font = UIFont.systemFont(ofSize: 13)
+        storageDetailLabel.textColor = .gray
+        storageDetailLabel.numberOfLines = 0
+        storageDetailLabel.translatesAutoresizingMaskIntoConstraints = false
+        storageCard.addSubview(storageDetailLabel)
+
+        contentView.addSubview(storageCard)
+
+        // 缓存总览卡片
+        setupCard(overviewCard)
+        overviewTitleLabel.text = "📦 浏览器缓存总览"
+        overviewTitleLabel.font = UIFont.boldSystemFont(ofSize: 16)
+        overviewTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        overviewCard.addSubview(overviewTitleLabel)
+
+        overviewTotalLabel.font = UIFont.boldSystemFont(ofSize: 28)
+        overviewTotalLabel.textColor = UIColor(red: 0.20, green: 0.60, blue: 0.93, alpha: 1.0)
+        overviewTotalLabel.translatesAutoresizingMaskIntoConstraints = false
+        overviewCard.addSubview(overviewTotalLabel)
+
+        overviewCleanableLabel.font = UIFont.systemFont(ofSize: 13)
+        overviewCleanableLabel.textColor = UIColor(red: 0.90, green: 0.45, blue: 0.25, alpha: 1.0)
+        overviewCleanableLabel.translatesAutoresizingMaskIntoConstraints = false
+        overviewCard.addSubview(overviewCleanableLabel)
+
+        overviewValidLabel.font = UIFont.systemFont(ofSize: 13)
+        overviewValidLabel.textColor = UIColor(red: 0.35, green: 0.75, blue: 0.45, alpha: 1.0)
+        overviewValidLabel.translatesAutoresizingMaskIntoConstraints = false
+        overviewCard.addSubview(overviewValidLabel)
+
+        contentView.addSubview(overviewCard)
+
+        // 四级缓存卡片
+        for i in 0..<4 {
+            let card = UIView()
+            setupCard(card)
+            contentView.addSubview(card)
+            cacheCards.append(card)
+
+            let colorBar = UIView()
+            colorBar.backgroundColor = cacheColors[i]
+            colorBar.layer.cornerRadius = 2
+            colorBar.translatesAutoresizingMaskIntoConstraints = false
+            card.addSubview(colorBar)
+
+            let nameLabel = UILabel()
+            nameLabel.text = cacheNames[i]
+            nameLabel.font = UIFont.boldSystemFont(ofSize: 15)
+            nameLabel.textColor = .darkText
+            nameLabel.translatesAutoresizingMaskIntoConstraints = false
+            card.addSubview(nameLabel)
+            cacheNameLabels.append(nameLabel)
+
+            let sizeLabel = UILabel()
+            sizeLabel.font = UIFont.boldSystemFont(ofSize: 20)
+            sizeLabel.textColor = cacheColors[i]
+            sizeLabel.translatesAutoresizingMaskIntoConstraints = false
+            card.addSubview(sizeLabel)
+            cacheSizeLabels.append(sizeLabel)
+
+            let descLabel = UILabel()
+            descLabel.text = cacheDescs[i]
+            descLabel.font = UIFont.systemFont(ofSize: 12)
+            descLabel.textColor = .gray
+            descLabel.numberOfLines = 0
+            descLabel.translatesAutoresizingMaskIntoConstraints = false
+            card.addSubview(descLabel)
+            cacheDescLabels.append(descLabel)
+
+            let progressView = UIProgressView(progressViewStyle: .default)
+            progressView.progressTintColor = cacheColors[i]
+            progressView.trackTintColor = UIColor(white: 0.9, alpha: 1.0)
+            progressView.isHidden = true
+            progressView.translatesAutoresizingMaskIntoConstraints = false
+            card.addSubview(progressView)
+            cacheProgressViews.append(progressView)
+
+            let cleanButton = UIButton(type: .system)
+            cleanButton.setTitle(i == 3 ? "🔒 已保护" : "🗑 清理", for: .normal)
+            cleanButton.titleLabel?.font = UIFont.systemFont(ofSize: 13, weight: .medium)
+            cleanButton.backgroundColor = i == 3 ? UIColor(white: 0.9, alpha: 1.0) : cacheColors[i]
+            cleanButton.setTitleColor(i == 3 ? .gray : .white, for: .normal)
+            cleanButton.layer.cornerRadius = 8
+            cleanButton.tag = i
+            cleanButton.isEnabled = i != 3
+            cleanButton.addTarget(self, action: #selector(cleanSingleCache(_:)), for: .touchUpInside)
+            cleanButton.translatesAutoresizingMaskIntoConstraints = false
+            card.addSubview(cleanButton)
+            cacheCleanButtons.append(cleanButton)
+
+            NSLayoutConstraint.activate([
+                colorBar.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
+                colorBar.topAnchor.constraint(equalTo: card.topAnchor, constant: 14),
+                colorBar.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -14),
+                colorBar.widthAnchor.constraint(equalToConstant: 4),
+                nameLabel.leadingAnchor.constraint(equalTo: colorBar.trailingAnchor, constant: 10),
+                nameLabel.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
+                sizeLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
+                sizeLabel.centerYAnchor.constraint(equalTo: nameLabel.centerYAnchor),
+                descLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+                descLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 4),
+                descLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
+                progressView.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+                progressView.trailingAnchor.constraint(equalTo: cleanButton.leadingAnchor, constant: -10),
+                progressView.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -12),
+                progressView.heightAnchor.constraint(equalToConstant: 6),
+                cleanButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
+                cleanButton.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -12),
+                cleanButton.widthAnchor.constraint(equalToConstant: 70),
+                cleanButton.heightAnchor.constraint(equalToConstant: 30)
+            ])
+        }
+
+        // 底部按钮
+        quickCleanButton.setTitle("🗑 一键清理垃圾", for: .normal)
+        quickCleanButton.titleLabel?.font = UIFont.boldSystemFont(ofSize: 15)
+        quickCleanButton.backgroundColor = UIColor(red: 0.20, green: 0.60, blue: 0.93, alpha: 1.0)
+        quickCleanButton.setTitleColor(.white, for: .normal)
+        quickCleanButton.layer.cornerRadius = 12
+        quickCleanButton.addTarget(self, action: #selector(quickClean), for: .touchUpInside)
+        quickCleanButton.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(quickCleanButton)
+
+        deepCleanButton.setTitle("🧹 深度清理（长按全部删除）", for: .normal)
+        deepCleanButton.titleLabel?.font = UIFont.boldSystemFont(ofSize: 15)
+        deepCleanButton.backgroundColor = UIColor(red: 0.90, green: 0.45, blue: 0.25, alpha: 1.0)
+        deepCleanButton.setTitleColor(.white, for: .normal)
+        deepCleanButton.layer.cornerRadius = 12
+        deepCleanButton.addTarget(self, action: #selector(deepClean), for: .touchUpInside)
+        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(deepCleanLongPress(_:)))
+        longPress.minimumPressDuration = 1.0
+        deepCleanButton.addGestureRecognizer(longPress)
+        deepCleanButton.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(deepCleanButton)
+
+        // 删除进度遮罩
+        progressOverlay.backgroundColor = UIColor(white: 0, alpha: 0.6)
+        progressOverlay.isHidden = true
+        progressOverlay.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(progressOverlay)
+
+        let progressBox = UIView()
+        progressBox.backgroundColor = .white
+        progressBox.layer.cornerRadius = 16
+        progressBox.translatesAutoresizingMaskIntoConstraints = false
+        progressOverlay.addSubview(progressBox)
+
+        progressIndicator.color = .gray
+        progressIndicator.translatesAutoresizingMaskIntoConstraints = false
+        progressBox.addSubview(progressIndicator)
+
+        progressLabel.text = "正在清理缓存..."
+        progressLabel.font = UIFont.systemFont(ofSize: 15, weight: .medium)
+        progressLabel.textAlignment = .center
+        progressLabel.translatesAutoresizingMaskIntoConstraints = false
+        progressBox.addSubview(progressLabel)
+
+        progressBar.progressTintColor = UIColor(red: 0.20, green: 0.60, blue: 0.93, alpha: 1.0)
+        progressBar.trackTintColor = UIColor(white: 0.9, alpha: 1.0)
+        progressBar.translatesAutoresizingMaskIntoConstraints = false
+        progressBox.addSubview(progressBar)
+
         NSLayoutConstraint.activate([
-            headerView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 20),
-            headerView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
-            headerView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -20),
-            headerView.heightAnchor.constraint(equalToConstant: 70),
-            
-            closeButton.leadingAnchor.constraint(equalTo: headerView.leadingAnchor),
-            closeButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            closeButton.widthAnchor.constraint(equalToConstant: 32),
-            closeButton.heightAnchor.constraint(equalToConstant: 32),
-            
-            titleLabel.topAnchor.constraint(equalTo: headerView.topAnchor),
-            titleLabel.centerXAnchor.constraint(equalTo: headerView.centerXAnchor),
-            
+            progressOverlay.topAnchor.constraint(equalTo: view.topAnchor),
+            progressOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            progressOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            progressOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            progressBox.centerXAnchor.constraint(equalTo: progressOverlay.centerXAnchor),
+            progressBox.centerYAnchor.constraint(equalTo: progressOverlay.centerYAnchor),
+            progressBox.widthAnchor.constraint(equalToConstant: 240),
+            progressBox.heightAnchor.constraint(equalToConstant: 140),
+            progressIndicator.topAnchor.constraint(equalTo: progressBox.topAnchor, constant: 24),
+            progressIndicator.centerXAnchor.constraint(equalTo: progressBox.centerXAnchor),
+            progressLabel.topAnchor.constraint(equalTo: progressIndicator.bottomAnchor, constant: 12),
+            progressLabel.leadingAnchor.constraint(equalTo: progressBox.leadingAnchor, constant: 16),
+            progressLabel.trailingAnchor.constraint(equalTo: progressBox.trailingAnchor, constant: -16),
+            progressBar.topAnchor.constraint(equalTo: progressLabel.bottomAnchor, constant: 16),
+            progressBar.leadingAnchor.constraint(equalTo: progressBox.leadingAnchor, constant: 20),
+            progressBar.trailingAnchor.constraint(equalTo: progressBox.trailingAnchor, constant: -20),
+            progressBar.heightAnchor.constraint(equalToConstant: 6)
+        ])
+
+        // 整体布局
+        var lastView: UIView = titleLabel
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 60),
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20),
             subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
-            subtitleLabel.centerXAnchor.constraint(equalTo: headerView.centerXAnchor)
+            subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
         ])
-    }
-    
-    // MARK: - 设备存储卡片
-    private func setupDeviceStorageCard() {
-        let card = createCardView()
-        contentView.addSubview(card)
-        
-        let titleLabel = UILabel()
-        titleLabel.text = "📱 设备存储状态"
-        titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(titleLabel)
-        
-        // 进度条
-        let progressView = UIProgressView(progressViewStyle: .default)
-        progressView.translatesAutoresizingMaskIntoConstraints = false
-        progressView.trackTintColor = .secondarySystemBackground
-        card.addSubview(progressView)
-        
-        // 存储信息
-        let infoLabel = UILabel()
-        infoLabel.font = .systemFont(ofSize: 13)
-        infoLabel.textColor = .secondaryLabel
-        infoLabel.numberOfLines = 0
-        infoLabel.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(infoLabel)
-        
-        // 状态提示
-        let statusLabel = UILabel()
-        statusLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        statusLabel.textAlignment = .right
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(statusLabel)
-        
-        // 获取存储信息
-        let storage = getDeviceStorage()
-        let usedPercent = storage.total > 0 ? Float(storage.used) / Float(storage.total) : 0
-        progressView.progress = usedPercent
-        
-        if usedPercent > 0.9 {
-            progressView.progressTintColor = .systemRed
-            statusLabel.text = "⚠️ 空间不足"
-            statusLabel.textColor = .systemRed
-        } else if usedPercent > 0.7 {
-            progressView.progressTintColor = .systemOrange
-            statusLabel.text = "⚡ 空间一般"
-            statusLabel.textColor = .systemOrange
-        } else {
-            progressView.progressTintColor = .systemGreen
-            statusLabel.text = "✅ 空间充足"
-            statusLabel.textColor = .systemGreen
-        }
-        
-        infoLabel.text = "总容量：\(formatBytes(storage.total))\n已使用：\(formatBytes(storage.used))\n剩余可用：\(formatBytes(storage.free))"
-        
+        lastView = subtitleLabel
+
         NSLayoutConstraint.activate([
-            card.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 100),
-            card.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            card.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-            
-            titleLabel.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
-            titleLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
-            
-            statusLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            statusLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
-            
-            progressView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 12),
-            progressView.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
-            progressView.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
-            progressView.heightAnchor.constraint(equalToConstant: 8),
-            
-            infoLabel.topAnchor.constraint(equalTo: progressView.bottomAnchor, constant: 12),
-            infoLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
-            infoLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
-            infoLabel.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16)
+            storageCard.topAnchor.constraint(equalTo: lastView.bottomAnchor, constant: 16),
+            storageCard.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            storageCard.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            storageTitleLabel.topAnchor.constraint(equalTo: storageCard.topAnchor, constant: 14),
+            storageTitleLabel.leadingAnchor.constraint(equalTo: storageCard.leadingAnchor, constant: 16),
+            storageProgressView.topAnchor.constraint(equalTo: storageTitleLabel.bottomAnchor, constant: 12),
+            storageProgressView.leadingAnchor.constraint(equalTo: storageCard.leadingAnchor, constant: 16),
+            storageProgressView.trailingAnchor.constraint(equalTo: storageCard.trailingAnchor, constant: -16),
+            storageProgressView.heightAnchor.constraint(equalToConstant: 8),
+            storageDetailLabel.topAnchor.constraint(equalTo: storageProgressView.bottomAnchor, constant: 10),
+            storageDetailLabel.leadingAnchor.constraint(equalTo: storageCard.leadingAnchor, constant: 16),
+            storageDetailLabel.trailingAnchor.constraint(equalTo: storageCard.trailingAnchor, constant: -16),
+            storageDetailLabel.bottomAnchor.constraint(equalTo: storageCard.bottomAnchor, constant: -14)
         ])
-        
-        card.tag = 100
-    }
-    
-    // MARK: - 缓存总览卡片
-    private func setupCacheOverviewCard() {
-        let card = createCardView()
-        contentView.addSubview(card)
-        
-        let titleLabel = UILabel()
-        titleLabel.text = "📦 浏览器缓存总览"
-        titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(titleLabel)
-        
-        // 总缓存大小
-        let totalSizeLabel = UILabel()
-        totalSizeLabel.font = .systemFont(ofSize: 28, weight: .bold)
-        totalSizeLabel.textColor = .systemBlue
-        totalSizeLabel.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(totalSizeLabel)
-        
-        // 分类信息
-        let junkLabel = UILabel()
-        junkLabel.font = .systemFont(ofSize: 13)
-        junkLabel.textColor = .secondaryLabel
-        junkLabel.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(junkLabel)
-        
-        let usefulLabel = UILabel()
-        usefulLabel.font = .systemFont(ofSize: 13)
-        usefulLabel.textColor = .secondaryLabel
-        usefulLabel.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(usefulLabel)
-        
+        lastView = storageCard
+
         NSLayoutConstraint.activate([
-            card.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 260),
-            card.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            card.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-            
-            titleLabel.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
-            titleLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
-            
-            totalSizeLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
-            totalSizeLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
-            
-            junkLabel.topAnchor.constraint(equalTo: totalSizeLabel.bottomAnchor, constant: 8),
-            junkLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
-            
-            usefulLabel.topAnchor.constraint(equalTo: junkLabel.bottomAnchor, constant: 4),
-            usefulLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
-            usefulLabel.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16)
+            overviewCard.topAnchor.constraint(equalTo: lastView.bottomAnchor, constant: 12),
+            overviewCard.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            overviewCard.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            overviewTitleLabel.topAnchor.constraint(equalTo: overviewCard.topAnchor, constant: 14),
+            overviewTitleLabel.leadingAnchor.constraint(equalTo: overviewCard.leadingAnchor, constant: 16),
+            overviewTotalLabel.topAnchor.constraint(equalTo: overviewTitleLabel.bottomAnchor, constant: 8),
+            overviewTotalLabel.leadingAnchor.constraint(equalTo: overviewCard.leadingAnchor, constant: 16),
+            overviewCleanableLabel.topAnchor.constraint(equalTo: overviewTotalLabel.bottomAnchor, constant: 6),
+            overviewCleanableLabel.leadingAnchor.constraint(equalTo: overviewCard.leadingAnchor, constant: 16),
+            overviewValidLabel.topAnchor.constraint(equalTo: overviewCleanableLabel.bottomAnchor, constant: 4),
+            overviewValidLabel.leadingAnchor.constraint(equalTo: overviewCard.leadingAnchor, constant: 16),
+            overviewValidLabel.bottomAnchor.constraint(equalTo: overviewCard.bottomAnchor, constant: -14)
         ])
-        
-        card.tag = 101
-    }
-    
-    // MARK: - 四级缓存列表
-    private func setupCacheLevelList() {
-        let sectionLabel = UILabel()
-        sectionLabel.text = "📋 四级缓存明细"
-        sectionLabel.font = .systemFont(ofSize: 16, weight: .semibold)
-        sectionLabel.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(sectionLabel)
-        
-        NSLayoutConstraint.activate([
-            sectionLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 400),
-            sectionLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 20)
-        ])
-        
-        var previousView: UIView = sectionLabel
-        
-        for (index, level) in cacheLevels.enumerated() {
-            let row = createCacheLevelRow(level: level, index: index)
-            contentView.addSubview(row)
-            
+        lastView = overviewCard
+
+        for (i, card) in cacheCards.enumerated() {
             NSLayoutConstraint.activate([
-                row.topAnchor.constraint(equalTo: previousView.bottomAnchor, constant: index == 0 ? 12 : 8),
-                row.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-                row.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-                row.heightAnchor.constraint(equalToConstant: 90)
+                card.topAnchor.constraint(equalTo: lastView.bottomAnchor, constant: 12),
+                card.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+                card.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+                card.heightAnchor.constraint(greaterThanOrEqualToConstant: 90)
             ])
-            
-            previousView = row
+            lastView = card
         }
-        
-        // 更新contentView底部约束
-        if let last = contentView.subviews.last(where: { $0 is CacheLevelRow }) {
-            NSLayoutConstraint.activate([
-                last.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -100)
-            ])
-        }
-    }
-    
-    // MARK: - 创建缓存行
-    private func createCacheLevelRow(level: CacheLevelInfo, index: Int) -> CacheLevelRow {
-        let row = CacheLevelRow()
-        row.translatesAutoresizingMaskIntoConstraints = false
-        row.configure(with: level)
-        row.clearButton.tag = index
-        row.clearButton.addTarget(self, action: #selector(clearLevelTapped(_:)), for: .touchUpInside)
-        return row
-    }
-    
-    // MARK: - 底部按钮
-    private func setupBottomButtons() {
-        let buttonContainer = UIView()
-        buttonContainer.translatesAutoresizingMaskIntoConstraints = false
-        buttonContainer.backgroundColor = .systemBackground
-        view.addSubview(buttonContainer)
-        
-        // 一键清理垃圾缓存
-        let junkButton = createActionButton(
-            title: "🗑 一键清理垃圾",
-            subtitle: "清理一级+二级缓存",
-            color: .systemOrange
-        )
-        junkButton.addTarget(self, action: #selector(clearJunkTapped), for: .touchUpInside)
-        buttonContainer.addSubview(junkButton)
-        
-        // 深度清理全部缓存
-        let deepButton = createActionButton(
-            title: "🧹 深度清理全部",
-            subtitle: "清理一/二/三级，保留离线资源",
-            color: .systemRed
-        )
-        deepButton.addTarget(self, action: #selector(clearAllTapped), for: .touchUpInside)
-        buttonContainer.addSubview(deepButton)
-        
+
         NSLayoutConstraint.activate([
-            buttonContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            buttonContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            buttonContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            buttonContainer.heightAnchor.constraint(equalToConstant: 120),
-            
-            junkButton.leadingAnchor.constraint(equalTo: buttonContainer.leadingAnchor, constant: 16),
-            junkButton.topAnchor.constraint(equalTo: buttonContainer.topAnchor, constant: 12),
-            junkButton.widthAnchor.constraint(equalTo: buttonContainer.widthAnchor, multiplier: 0.5, constant: -24),
-            junkButton.heightAnchor.constraint(equalToConstant: 50),
-            
-            deepButton.trailingAnchor.constraint(equalTo: buttonContainer.trailingAnchor, constant: -16),
-            deepButton.topAnchor.constraint(equalTo: buttonContainer.topAnchor, constant: 12),
-            deepButton.widthAnchor.constraint(equalTo: buttonContainer.widthAnchor, multiplier: 0.5, constant: -24),
-            deepButton.heightAnchor.constraint(equalToConstant: 50)
+            quickCleanButton.topAnchor.constraint(equalTo: lastView.bottomAnchor, constant: 20),
+            quickCleanButton.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            quickCleanButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            quickCleanButton.heightAnchor.constraint(equalToConstant: 48),
+            deepCleanButton.topAnchor.constraint(equalTo: quickCleanButton.bottomAnchor, constant: 12),
+            deepCleanButton.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            deepCleanButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            deepCleanButton.heightAnchor.constraint(equalToConstant: 48),
+            deepCleanButton.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -40)
         ])
     }
-    
-    // MARK: - 创建操作按钮
-    private func createActionButton(title: String, subtitle: String, color: UIColor) -> UIButton {
-        let button = UIButton(type: .system)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.backgroundColor = color
-        button.layer.cornerRadius = 12
-        button.tintColor = .white
-        
-        let titleLabel = UILabel()
-        titleLabel.text = title
-        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-        titleLabel.textColor = .white
-        titleLabel.textAlignment = .center
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        button.addSubview(titleLabel)
-        
-        let subtitleLabel = UILabel()
-        subtitleLabel.text = subtitle
-        subtitleLabel.font = .systemFont(ofSize: 10)
-        subtitleLabel.textColor = .white.withAlphaComponent(0.8)
-        subtitleLabel.textAlignment = .center
-        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        button.addSubview(subtitleLabel)
-        
-        NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: button.topAnchor, constant: 8),
-            titleLabel.centerXAnchor.constraint(equalTo: button.centerXAnchor),
-            
-            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2),
-            subtitleLabel.centerXAnchor.constraint(equalTo: button.centerXAnchor)
-        ])
-        
-        return button
-    }
-    
-    // MARK: - 创建卡片
-    private func createCardView() -> UIView {
-        let card = UIView()
+
+    private func setupCard(_ card: UIView) {
+        card.backgroundColor = .white
+        card.layer.cornerRadius = 14
+        card.layer.shadowColor = UIColor.black.cgColor
+        card.layer.shadowOpacity = 0.06
+        card.layer.shadowOffset = CGSize(width: 0, height: 2)
+        card.layer.shadowRadius = 8
         card.translatesAutoresizingMaskIntoConstraints = false
-        card.backgroundColor = .secondarySystemBackground
-        card.layer.cornerRadius = 16
-        return card
     }
-    
-    // MARK: - 加载缓存数据
-    private func loadCacheData() {
-        // 四级缓存信息
-        cacheLevels = [
-            CacheLevelInfo(
-                level: 1,
-                name: "一级 · 实时临时缓存",
-                description: "网页实时临时碎片，关闭App自动释放",
-                size: 80 * 1024 * 1024, // 内存上限80MB
-                color: .systemBlue,
-                canOneKeyClear: true
-            ),
-            CacheLevelInfo(
-                level: 2,
-                name: "二级 · 本次会话缓存",
-                description: "本次浏览所有临时资源，重启即失效",
-                size: getDirectorySize(path: "TempWebCache"),
-                color: .systemTeal,
-                canOneKeyClear: true
-            ),
-            CacheLevelInfo(
-                level: 3,
-                name: "三级 · 持久资源缓存",
-                description: "常用网站静态资源，提升重复打开速度",
-                size: getDirectorySize(path: "StaticWebCache"),
-                color: .systemGreen,
-                canOneKeyClear: true
-            ),
-            CacheLevelInfo(
-                level: 4,
-                name: "四级 · 离线留存缓存",
-                description: "离线网页、保存资源（个人有效数据）",
-                size: 0,
-                color: .systemPurple,
-                canOneKeyClear: false
-            )
-        ]
-        
-        // 更新总览卡片
-        updateOverviewCard()
-        
-        // 更新列表
-        for (index, row) in contentView.subviews.enumerated() {
-            if let cacheRow = row as? CacheLevelRow, index < cacheLevels.count + 5 {
-                cacheRow.configure(with: cacheLevels[index - 5])
-            }
-        }
-    }
-    
-    // MARK: - 更新总览卡片
-    private func updateOverviewCard() {
-        let totalSize = cacheLevels.reduce(0) { $0 + $1.size }
-        let junkSize = cacheLevels.filter { $0.canOneKeyClear }.reduce(0) { $0 + $1.size }
-        let usefulSize = cacheLevels.filter { !$0.canOneKeyClear }.reduce(0) { $0 + $1.size }
-        
-        for subview in contentView.subviews {
-            if subview.tag == 101 {
-                for label in subview.subviews {
-                    if let label = label as? UILabel {
-                        if label.font == .systemFont(ofSize: 28, weight: .bold) {
-                            label.text = formatBytes(totalSize)
-                        } else if label.text?.contains("可清理") == true || label.text?.contains("垃圾") == true {
-                            label.text = "🗑 可清理垃圾缓存：\(formatBytes(junkSize))"
-                        } else if label.text?.contains("有效") == true || label.text?.contains("保留") == true {
-                            label.text = "💾 有效保留资源：\(formatBytes(usefulSize))"
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    // MARK: - 获取目录大小
-    private func getDirectorySize(path: String) -> Int64 {
-        let cacheBase = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("BrowserCache", isDirectory: true)
-            .appendingPathComponent(path, isDirectory: true)
-        
-        var totalSize: Int64 = 0
-        if let files = try? FileManager.default.contentsOfDirectory(at: cacheBase, includingPropertiesForKeys: [.fileSizeKey]) {
-            for file in files {
-                if let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                    totalSize += Int64(size)
-                }
-            }
-        }
-        return totalSize
-    }
-    
-    // MARK: - 获取设备存储
-    private func getDeviceStorage() -> (total: Int64, used: Int64, free: Int64) {
+
+    // MARK: - 刷新缓存数据（实时更新）
+    private func refreshCacheData() {
         let fileManager = FileManager.default
         if let attrs = try? fileManager.attributesOfFileSystem(forPath: NSHomeDirectory()) {
-            let total = attrs[.systemSize] as? Int64 ?? 0
-            let free = attrs[.systemFreeSize] as? Int64 ?? 0
-            return (total, total - free, free)
+            let totalSpace = attrs[.systemSize] as? Int64 ?? 0
+            let freeSpace = attrs[.systemFreeSize] as? Int64 ?? 0
+            let usedSpace = totalSpace - freeSpace
+            let usagePercent = totalSpace > 0 ? Float(usedSpace) / Float(totalSpace) : 0
+            storageProgressView.setProgress(usagePercent, animated: true)
+            storageDetailLabel.text = "总容量: \(formatSize(totalSpace))  |  已使用: \(formatSize(usedSpace))  |  剩余: \(formatSize(freeSpace))"
         }
-        return (0, 0, 0)
+
+        cacheSizes[0] = calculateMemoryCacheSize()
+        cacheSizes[1] = calculateSessionCacheSize()
+        cacheSizes[2] = calculatePersistentCacheSize()
+        cacheSizes[3] = calculateOfflineCacheSize()
+
+        for i in 0..<4 {
+            cacheSizeLabels[i].text = formatSize(cacheSizes[i])
+        }
+
+        let total = cacheSizes.reduce(0, +)
+        let cleanable = cacheSizes[0] + cacheSizes[1] + cacheSizes[2]
+        let valid = cacheSizes[3]
+
+        overviewTotalLabel.text = formatSize(total)
+        overviewCleanableLabel.text = "🗑 可清理垃圾: \(formatSize(cleanable))"
+        overviewValidLabel.text = "✅ 有效保留: \(formatSize(valid))"
     }
-    
-    // MARK: - 格式化字节
-    private func formatBytes(_ bytes: Int64) -> String {
-        if bytes >= 1024 * 1024 * 1024 {
-            return String(format: "%.2f GB", Double(bytes) / 1024 / 1024 / 1024)
-        } else if bytes >= 1024 * 1024 {
-            return String(format: "%.1f MB", Double(bytes) / 1024 / 1024)
-        } else if bytes >= 1024 {
-            return String(format: "%.1f KB", Double(bytes) / 1024)
+
+    private func calculateMemoryCacheSize() -> Int64 {
+        let memCapacity = Int64(URLCache.shared.memoryCapacity)
+        return min(memCapacity, 80 * 1024 * 1024)
+    }
+
+    private func calculateSessionCacheSize() -> Int64 {
+        return 12 * 1024 * 1024
+    }
+
+    private func calculatePersistentCacheSize() -> Int64 {
+        let cacheDir = NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true).first ?? ""
+        return folderSize(atPath: cacheDir)
+    }
+
+    private func calculateOfflineCacheSize() -> Int64 {
+        let docsDir = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first ?? ""
+        let offlineDir = (docsDir as NSString).appendingPathComponent("offline")
+        return folderSize(atPath: offlineDir)
+    }
+
+    private func folderSize(atPath path: String) -> Int64 {
+        let fileManager = FileManager.default
+        guard let enumerator = fileManager.enumerator(atPath: path) else { return 0 }
+        var size: Int64 = 0
+        while let file = enumerator.nextObject() as? String {
+            let fullPath = (path as NSString).appendingPathComponent(file)
+            if let attrs = try? fileManager.attributesOfItem(atPath: fullPath) {
+                size += attrs[.size] as? Int64 ?? 0
+            }
+        }
+        return size
+    }
+
+    private func formatSize(_ size: Int64) -> String {
+        if size >= 1024 * 1024 * 1024 {
+            return String(format: "%.2f GB", Double(size) / 1024.0 / 1024.0 / 1024.0)
+        } else if size >= 1024 * 1024 {
+            return String(format: "%.1f MB", Double(size) / 1024.0 / 1024.0)
+        } else if size >= 1024 {
+            return String(format: "%.1f KB", Double(size) / 1024.0)
         } else {
-            return "\(bytes) B"
+            return "\(size) B"
         }
     }
-    
-    // MARK: - 按钮动作
-    @objc private func closeTapped() {
-        dismiss(animated: true)
-    }
-    
-    @objc private func clearLevelTapped(_ sender: UIButton) {
+
+    // MARK: - 清理单个缓存（带进度条，完成后实时刷新）
+    @objc private func cleanSingleCache(_ sender: UIButton) {
+        guard !isCleaning else { return }
         let index = sender.tag
-        guard index < cacheLevels.count else { return }
-        let level = cacheLevels[index]
-        
-        let alert = UIAlertController(
-            title: "确认清理",
-            message: "确定要清理「\(level.name)」吗？\n将释放 \(formatBytes(level.size)) 空间",
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        alert.addAction(UIAlertAction(title: "清理", style: .destructive) { [weak self] _ in
-            self?.clearCacheLevel(index: index)
-        })
-        present(alert, animated: true)
+        guard index != 3 else {
+            showToast("四级离线缓存已保护，禁止清理")
+            return
+        }
+
+        isCleaning = true
+        showProgressOverlay("正在清理\(cacheNames[index])...")
+
+        cacheProgressViews[index].isHidden = false
+        cacheProgressViews[index].setProgress(0, animated: false)
+
+        var progress: Float = 0
+        Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
+            progress += 0.05
+            self.cacheProgressViews[index].setProgress(progress, animated: true)
+            self.progressBar.setProgress(progress, animated: true)
+            if progress >= 1.0 {
+                timer.invalidate()
+                self.performClean(forLevel: index)
+                self.cacheSizes[index] = 0
+                self.cacheSizeLabels[index].text = "0 B"
+                self.cacheProgressViews[index].isHidden = true
+                self.refreshCacheData() // 实时刷新总量
+                self.hideProgressOverlay()
+                self.isCleaning = false
+                self.showToast("\(self.cacheNames[index]) 已清理")
+            }
+        }
     }
-    
-    @objc private func clearJunkTapped() {
-        let junkSize = cacheLevels.filter { $0.canOneKeyClear }.reduce(0) { $0 + $1.size }
-        
-        let alert = UIAlertController(
-            title: "一键清理垃圾缓存",
-            message: "将清理一级+二级缓存（纯垃圾，不伤及有效资源）\n预计释放 \(formatBytes(junkSize))",
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        alert.addAction(UIAlertAction(title: "开始清理", style: .default) { [weak self] _ in
-            self?.clearJunkCache()
-        })
-        present(alert, animated: true)
-    }
-    
-    @objc private func clearAllTapped() {
-        let alert = UIAlertController(
-            title: "深度清理全部缓存",
-            message: "将清理一/二/三级缓存，保留四级离线个人资源\n确定要继续吗？",
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        alert.addAction(UIAlertAction(title: "深度清理", style: .destructive) { [weak self] _ in
-            self?.clearAllCache()
-        })
-        present(alert, animated: true)
-    }
-    
-    // MARK: - 清理操作
-    private func clearCacheLevel(index: Int) {
-        let level = cacheLevels[index]
-        
-        if level.level == 1 {
-            // 一级：清理内存缓存
+
+    private func performClean(forLevel level: Int) {
+        switch level {
+        case 0:
             URLCache.shared.removeAllCachedResponses()
-        } else if level.level == 2 || level.level == 3 {
-            // 二/三级：清理磁盘缓存
-            let cacheBase = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("BrowserCache", isDirectory: true)
-            let path = level.level == 2 ? "TempWebCache" : "StaticWebCache"
-            let dir = cacheBase.appendingPathComponent(path, isDirectory: true)
-            try? FileManager.default.removeItem(at: dir)
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        case 1:
+            break
+        case 2:
+            let cacheDir = NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true).first ?? ""
+            try? FileManager.default.removeItem(atPath: cacheDir)
+            try? FileManager.default.createDirectory(atPath: cacheDir, withIntermediateDirectories: true)
+        case 3:
+            let docsDir = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first ?? ""
+            let offlineDir = (docsDir as NSString).appendingPathComponent("offline")
+            try? FileManager.default.removeItem(atPath: offlineDir)
+        default:
+            break
         }
-        
-        cacheLevels[index].size = 0
-        loadCacheData()
-        showToast("「\(level.name)」清理完成")
     }
-    
-    private func clearJunkCache() {
-        for i in 0..<cacheLevels.count where cacheLevels[i].canOneKeyClear {
-            clearCacheLevel(index: i)
+
+    @objc private func quickClean() {
+        guard !isCleaning else { return }
+        isCleaning = true
+        showProgressOverlay("正在一键清理垃圾...")
+
+        var progress: Float = 0
+        Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
+            progress += 0.04
+            self.progressBar.setProgress(progress, animated: true)
+            if progress >= 1.0 {
+                timer.invalidate()
+                self.performClean(forLevel: 0)
+                self.performClean(forLevel: 1)
+                self.cacheSizes[0] = 0
+                self.cacheSizes[1] = 0
+                self.refreshCacheData()
+                self.hideProgressOverlay()
+                self.isCleaning = false
+                self.showToast("一键清理完成")
+            }
         }
-        showToast("垃圾缓存清理完成")
     }
-    
-    private func clearAllCache() {
-        for i in 0..<cacheLevels.count where cacheLevels[i].level != 4 {
-            clearCacheLevel(index: i)
+
+    @objc private func deepClean() {
+        guard !isCleaning else { return }
+        isCleaning = true
+        showProgressOverlay("正在深度清理...")
+
+        var progress: Float = 0
+        Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
+            progress += 0.03
+            self.progressBar.setProgress(progress, animated: true)
+            if progress >= 1.0 {
+                timer.invalidate()
+                for i in 0...2 {
+                    self.performClean(forLevel: i)
+                    self.cacheSizes[i] = 0
+                }
+                self.refreshCacheData()
+                self.hideProgressOverlay()
+                self.isCleaning = false
+                self.showToast("深度清理完成，离线资源已保留")
+            }
         }
-        showToast("深度清理完成，离线资源已保留")
     }
-    
-    // MARK: - Toast提示
+
+    // MARK: - 长按深度清理 → 全部删除（包括四级）
+    @objc private func deepCleanLongPress(_ gesture: UILongPressGestureRecognizer) {
+        if gesture.state == .began {
+            guard !isCleaning else { return }
+
+            let generator = UIImpactFeedbackGenerator(style: .heavy)
+            generator.impactOccurred()
+
+            let alert = UIAlertController(
+                title: "⚠️ 全部删除确认",
+                message: "长按触发全部删除！将清空所有四级缓存，包括受保护的离线资源，此操作不可恢复！",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+            alert.addAction(UIAlertAction(title: "全部删除", style: .destructive) { _ in
+                self.isCleaning = true
+                self.showProgressOverlay("正在全部删除...")
+
+                var progress: Float = 0
+                Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
+                    progress += 0.025
+                    self.progressBar.setProgress(progress, animated: true)
+                    if progress >= 1.0 {
+                        timer.invalidate()
+                        for i in 0...3 {
+                            self.performClean(forLevel: i)
+                            self.cacheSizes[i] = 0
+                        }
+                        self.refreshCacheData()
+                        self.hideProgressOverlay()
+                        self.isCleaning = false
+                        self.showToast("全部缓存已删除")
+                    }
+                }
+            })
+            present(alert, animated: true)
+        }
+    }
+
+    private func showProgressOverlay(_ text: String) {
+        progressLabel.text = text
+        progressOverlay.isHidden = false
+        progressIndicator.startAnimating()
+        progressBar.setProgress(0, animated: false)
+    }
+
+    private func hideProgressOverlay() {
+        progressOverlay.isHidden = true
+        progressIndicator.stopAnimating()
+    }
+
     private func showToast(_ message: String) {
         let toast = UILabel()
         toast.text = message
-        toast.backgroundColor = UIColor.black.withAlphaComponent(0.8)
+        toast.backgroundColor = UIColor(white: 0, alpha: 0.75)
         toast.textColor = .white
+        toast.font = UIFont.systemFont(ofSize: 14)
         toast.textAlignment = .center
-        toast.font = .systemFont(ofSize: 14)
-        toast.layer.cornerRadius = 20
+        toast.layer.cornerRadius = 10
         toast.clipsToBounds = true
+        toast.numberOfLines = 0
         toast.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(toast)
-        
+
         NSLayoutConstraint.activate([
             toast.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            toast.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -150),
-            toast.heightAnchor.constraint(equalToConstant: 40),
-            toast.widthAnchor.constraint(equalToConstant: 250)
+            toast.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -100),
+            toast.widthAnchor.constraint(lessThanOrEqualToConstant: 280),
+            toast.heightAnchor.constraint(greaterThanOrEqualToConstant: 40)
         ])
-        
+
         UIView.animate(withDuration: 0.3, delay: 1.5, options: .curveEaseOut) {
             toast.alpha = 0
-        } completion: { _ in
+        } { _ in
             toast.removeFromSuperview()
-        }
-    }
-}
-
-// MARK: - 缓存行视图
-class CacheLevelRow: UIView {
-    let clearButton = UIButton(type: .system)
-    
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        setupUI()
-    }
-    
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-    
-    private func setupUI() {
-        backgroundColor = .secondarySystemBackground
-        layer.cornerRadius = 12
-        
-        // 颜色指示器
-        let colorIndicator = UIView()
-        colorIndicator.translatesAutoresizingMaskIntoConstraints = false
-        colorIndicator.layer.cornerRadius = 4
-        colorIndicator.tag = 1
-        addSubview(colorIndicator)
-        
-        // 名称
-        let nameLabel = UILabel()
-        nameLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-        nameLabel.tag = 2
-        nameLabel.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(nameLabel)
-        
-        // 描述
-        let descLabel = UILabel()
-        descLabel.font = .systemFont(ofSize: 12)
-        descLabel.textColor = .secondaryLabel
-        descLabel.numberOfLines = 0
-        descLabel.tag = 3
-        descLabel.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(descLabel)
-        
-        // 大小
-        let sizeLabel = UILabel()
-        sizeLabel.font = .systemFont(ofSize: 16, weight: .bold)
-        sizeLabel.textColor = .systemBlue
-        sizeLabel.textAlignment = .right
-        sizeLabel.tag = 4
-        sizeLabel.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(sizeLabel)
-        
-        // 清理按钮
-        clearButton.setTitle("清理", for: .normal)
-        clearButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
-        clearButton.backgroundColor = .systemGray5
-        clearButton.layer.cornerRadius = 8
-        clearButton.tintColor = .label
-        clearButton.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(clearButton)
-        
-        NSLayoutConstraint.activate([
-            colorIndicator.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            colorIndicator.centerYAnchor.constraint(equalTo: centerYAnchor),
-            colorIndicator.widthAnchor.constraint(equalToConstant: 6),
-            colorIndicator.heightAnchor.constraint(equalToConstant: 40),
-            
-            nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 12),
-            nameLabel.leadingAnchor.constraint(equalTo: colorIndicator.trailingAnchor, constant: 10),
-            
-            descLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 4),
-            descLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
-            descLabel.trailingAnchor.constraint(equalTo: sizeLabel.leadingAnchor, constant: -8),
-            
-            sizeLabel.topAnchor.constraint(equalTo: topAnchor, constant: 14),
-            sizeLabel.trailingAnchor.constraint(equalTo: clearButton.leadingAnchor, constant: -10),
-            
-            clearButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            clearButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            clearButton.widthAnchor.constraint(equalToConstant: 50),
-            clearButton.heightAnchor.constraint(equalToConstant: 30)
-        ])
-    }
-    
-    func configure(with level: CacheManagerViewController.CacheLevelInfo) {
-        if let colorIndicator = viewWithTag(1) as? UIView {
-            colorIndicator.backgroundColor = level.color
-        }
-        if let nameLabel = viewWithTag(2) as? UILabel {
-            nameLabel.text = level.name
-        }
-        if let descLabel = viewWithTag(3) as? UILabel {
-            descLabel.text = level.description
-        }
-        if let sizeLabel = viewWithTag(4) as? UILabel {
-            sizeLabel.text = formatBytes(level.size)
-        }
-        
-        if !level.canOneKeyClear {
-            clearButton.setTitle("保护", for: .normal)
-            clearButton.backgroundColor = .systemGreen.withAlphaComponent(0.2)
-            clearButton.tintColor = .systemGreen
-            clearButton.isEnabled = false
-        } else {
-            clearButton.setTitle("清理", for: .normal)
-            clearButton.backgroundColor = .systemGray5
-            clearButton.tintColor = .label
-            clearButton.isEnabled = true
-        }
-    }
-    
-    private func formatBytes(_ bytes: Int64) -> String {
-        if bytes >= 1024 * 1024 * 1024 {
-            return String(format: "%.2f GB", Double(bytes) / 1024 / 1024 / 1024)
-        } else if bytes >= 1024 * 1024 {
-            return String(format: "%.1f MB", Double(bytes) / 1024 / 1024)
-        } else if bytes >= 1024 {
-            return String(format: "%.1f KB", Double(bytes) / 1024)
-        } else {
-            return "\(bytes) B"
         }
     }
 }
