@@ -3851,19 +3851,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
     }
 
-    @available(iOS 15.0, *)
-    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-        download.delegate = self
-        // 记录下载任务
-        if let url = navigationResponse.response.url?.absoluteString {
-            let fileName = navigationResponse.response.suggestedFilename ?? (URL(string: url)?.lastPathComponent ?? "download")
-            let fileSize = (navigationResponse.response as? HTTPURLResponse)?.expectedContentLength ?? 0
-            DownloadManager.shared.startWKDownload(download: download, url: url, fileName: fileName, fileSize: fileSize, mimeType: navigationResponse.response.mimeType ?? "")
-            DispatchQueue.main.async {
-                self.showToast("开始下载：\(fileName)")
-            }
-        }
-    }
     // MARK: - WKNavigationDelegate
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if let index = webViews.firstIndex(of: webView) {
