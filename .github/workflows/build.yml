@@ -222,27 +222,32 @@ jobs:
             -allowProvisioningUpdates
           ls -lh build/export/
           
-          # 手动将Extension添加到IPA中（先签名再添加）
+          # 手动将Extension添加到IPA中（终极ldid签名方案，适配TrollStore）
           if [ -d "build/AppProxyExtension.appex" ]; then
-            echo "给Extension签名（TrollStore兼容，确保entitlements嵌入二进制）..."
+            echo "=== 开始Extension终极签名（TrollStore专用）==="
             # 安装ldid
             brew install ldid 2>/dev/null || true
+            # 清理旧签名
+            rm -rf build/AppProxyExtension.appex/_CodeSignature
+            rm -f build/AppProxyExtension.appex/embedded.mobileprovision
             # 复制entitlements
             cp AppProxyExtension/AppProxyExtension.entitlements build/AppProxyExtension.appex/entitlements.plist
-            # 关键：用ldid把entitlements嵌入到二进制中（TrollStore要求）
+            # 步骤1：用ldid给二进制注入entitlements（关键！）
             if command -v ldid &> /dev/null; then
-              echo "使用ldid签名二进制（嵌入entitlements）"
+              echo "[1/3] ldid注入entitlements到二进制..."
               ldid -Sbuild/AppProxyExtension.appex/entitlements.plist build/AppProxyExtension.appex/AppProxyExtension
-              echo "ldid二进制签名完成"
+              echo "ldid签名完成"
             else
-              echo "ldid未安装，使用codesign"
+              echo "[1/3] ldid未安装，跳过"
             fi
-            # 用codesign签名整个.appex包（ad-hoc）
-            codesign --force --sign - --entitlements build/AppProxyExtension.appex/entitlements.plist --generate-entitlement-der --timestamp=none build/AppProxyExtension.appex 2>/dev/null || echo "codesign签名警告"
-            # 验证entitlements是否嵌入
-            codesign -d --entitlements - build/AppProxyExtension.appex 2>&1 | head -20 || true
+            # 步骤2：用codesign ad-hoc签名整个包
+            echo "[2/3] codesign ad-hoc签名整个.appex..."
+            codesign --force --sign - --entitlements build/AppProxyExtension.appex/entitlements.plist --generate-entitlement-der --timestamp=none build/AppProxyExtension.appex 2>&1 || echo "codesign签名警告"
+            # 步骤3：验证
+            echo "[3/3] 验证签名..."
+            codesign -d --entitlements - build/AppProxyExtension.appex 2>&1 | head -25 || true
             rm -f build/AppProxyExtension.appex/entitlements.plist
-            echo "Extension签名完成"
+            echo "=== Extension终极签名完成 ==="
             
             echo "将Extension添加到IPA中..."
             cd build/export

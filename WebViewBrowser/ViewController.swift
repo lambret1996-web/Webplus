@@ -54,6 +54,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var edgeMenuView: UIView!
     private var edgeMenuOverlay: UIButton!
     private var edgeMenuLeadingConstraint: NSLayoutConstraint!
+    private var tabBarTopConstraint: NSLayoutConstraint!
+    private var tabBarBottomConstraint: NSLayoutConstraint!
+    private var webViewTopConstraint: NSLayoutConstraint!
+    private var webViewBottomConstraint: NSLayoutConstraint!
     private var edgeMenuIsOpen = false
     private var edgeMenuStartX: CGFloat = 0
     private var edgeMenuPanStart: CGPoint = .zero
@@ -202,8 +206,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         separator.backgroundColor = .separator.withAlphaComponent(0.5)
         separator.translatesAutoresizingMaskIntoConstraints = false
         tabBar.addSubview(separator)
+        tabBarTopConstraint = tabBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
+        tabBarBottomConstraint = tabBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
         NSLayoutConstraint.activate([
-            tabBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            tabBarTopConstraint,
             tabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tabBar.heightAnchor.constraint(equalToConstant: tabBarHeight),
@@ -1076,11 +1082,13 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         webViewContainer = UIView()
         webViewContainer.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webViewContainer)
+        webViewTopConstraint = webViewContainer.topAnchor.constraint(equalTo: tabBar.bottomAnchor)
+        webViewBottomConstraint = webViewContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         NSLayoutConstraint.activate([
-            webViewContainer.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
+            webViewTopConstraint,
             webViewContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webViewContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            webViewContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            webViewBottomConstraint
         ])
     }
     private func setupWebViews() {
@@ -2301,11 +2309,14 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     
     // MARK: - 设置默认浏览器
     private func setAsDefaultBrowser() {
-        showToast("请在系统设置中设置默认浏览器")
-        // iOS 14+ 支持设置默认浏览器
-        if let url = URL(string: UIApplication.openSettingsURLString) {
-            UIApplication.shared.open(url, options: [:], completionHandler: nil)
-        }
+        let alert = UIAlertController(title: "设置默认浏览器", message: "📌 操作步骤：\n1. 点击「前往设置」跳转到系统设置\n2. 在设置页面向上滑动找到「默认浏览器应用」\n3. 点击选择本浏览器为默认\n\n⚠️ 仅 iOS 14 及以上系统支持此功能", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "前往设置", style: .default) { _ in
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            }
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
     }
     
     // MARK: - 广告拦截开关
