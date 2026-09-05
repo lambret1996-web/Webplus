@@ -9,6 +9,20 @@ import Foundation
 
 class FourLevelCache: URLCache {
     
+    // MARK: - 谷歌信任模式（与ViewController同步）
+    private let googleTrustModeKey = "googleTrustMode"
+    private let googleDomainSuffixes = ["google.com", "googleapis.com", "gstatic.com", "recaptcha.net", "googleusercontent.com", "google-analytics.com", "googletagmanager.com", "googlesyndication.com", "googleadservices.com", "googlezip.net", "googlezip.com"]
+    
+    private var isGoogleTrustMode: Bool {
+        if UserDefaults.standard.object(forKey: googleTrustModeKey) == nil { return true }
+        return UserDefaults.standard.bool(forKey: googleTrustModeKey)
+    }
+    
+    private func isGoogleRequest(_ request: URLRequest) -> Bool {
+        guard isGoogleTrustMode, let host = request.url?.host?.lowercased() else { return false }
+        return googleDomainSuffixes.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+    
     // MARK: - 缓存目录
     private let memoryCache = NSCache<NSString, CachedURLResponse>()
     private let tempCacheDir: URL
@@ -130,6 +144,9 @@ class FourLevelCache: URLCache {
     
     // MARK: - 重写URLCache方法
     override func cachedResponse(for request: URLRequest) -> CachedURLResponse? {
+        // 谷歌信任模式：谷歌域名不使用自定义缓存，走系统默认缓存策略
+        if isGoogleRequest(request) { return nil }
+        
         if request.cachePolicy == .reloadIgnoringLocalCacheData ||
            request.cachePolicy == .reloadIgnoringLocalAndRemoteCacheData {
             return nil
@@ -153,6 +170,9 @@ class FourLevelCache: URLCache {
     }
     
     override func storeCachedResponse(_ cachedResponse: CachedURLResponse, for request: URLRequest) {
+        // 谷歌信任模式：谷歌域名不存储自定义缓存
+        if isGoogleRequest(request) { return }
+        
         guard request.httpMethod != "POST",
               cachedResponse.response is HTTPURLResponse else {
             return

@@ -120,6 +120,30 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private let customAdDomainsKey = "customAdDomains"
     private let globalImageBlockKey = "globalImageBlock"
     private let fourLevelCache = FourLevelCache(memoryCapacity: 80 * 1024 * 1024, diskCapacity: 200 * 1024 * 1024, diskPath: "FourLevelCache")
+    // MARK: - 谷歌信任模式（降低人机验证概率）
+    private let googleTrustModeKey = "googleTrustMode"
+    private var googleTrustMode: Bool {
+        if UserDefaults.standard.object(forKey: googleTrustModeKey) == nil { return true }
+        return UserDefaults.standard.bool(forKey: googleTrustModeKey)
+    }
+    /// 谷歌家族域名（信任模式下豁免广告拦截/预连接/缓存策略）
+    private let googleDomains = ["google.com", "googleapis.com", "gstatic.com", "recaptcha.net", "googleusercontent.com", "google-analytics.com", "googletagmanager.com", "googlesyndication.com", "googleadservices.com", "googlezip.net", "googlezip.com"]
+    /// 判断是否为谷歌家族域名
+    private func isGoogleDomain(_ urlString: String?) -> Bool {
+        guard let urlString = urlString, let host = URL(string: urlString)?.host?.lowercased() else { return false }
+        return googleDomains.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+    /// 动态生成与当前系统版本匹配的标准Safari UA
+    private func dynamicSafariUA() -> String {
+        let systemVersion = UIDevice.current.systemVersion // e.g. "16.7.1"
+        let parts = systemVersion.split(separator: ".")
+        let major = parts.first ?? "16"
+        let minor = parts.count > 1 ? parts[1] : "0"
+        let osVersion = "\(major)_\(minor)"
+        // Safari版本号通常和iOS主版本一致
+        let safariVersion = "\(major).\(minor)"
+        return "Mozilla/5.0 (iPhone; CPU iPhone OS \(osVersion) like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(safariVersion) Mobile/15E148 Safari/604.1"
+    }
     // MARK: - UA切换
     private var currentUAIndex: Int = 0
     private let uaIndexKey = "currentUAIndex"
@@ -1008,6 +1032,29 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             ],
             "action": ["type": "ignore-previous-rules"]
         ])
+        // 谷歌信任模式：放行谷歌家族全部域名（reCAPTCHA/分析/Cookie脚本），降低人机验证概率
+        if googleTrustMode {
+            let googleWhitelist = [
+                "google\\.com", "googleapis\\.com", "gstatic\\.com",
+                "recaptcha\\.net", "googleusercontent\\.com",
+                "google-analytics\\.com", "googletagmanager\\.com",
+                "googlesyndication\\.com", "googleadservices\\.com",
+                "googlezip\\.net", "googlezip\\.com", "google\\.com\\.hk",
+                "google\\.co\\.jp", "google\\.co\\.uk", "google\\.de",
+                "google\\.fr", "google\\.ca", "google\\.com\\.au",
+                "google\\.com\\.br", "google\\.in", "google\\.it",
+                "google\\.es", "google\\.nl", "google\\.se", "google\\.pl"
+            ]
+            for domain in googleWhitelist {
+                rules.append([
+                    "trigger": [
+                        "url-filter": domain,
+                        "resource-type": ["image", "style-sheet", "script", "font", "raw", "document"]
+                    ],
+                    "action": ["type": "ignore-previous-rules"]
+                ])
+            }
+        }
         // 序列化为JSON
         guard let jsonData = try? JSONSerialization.data(withJSONObject: rules, options: []),
               let rulesJSON = String(data: jsonData, encoding: .utf8) else {
@@ -1036,6 +1083,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // MARK: - DNS预解析
     private func prefetchDNS(for urlString: String) {
         guard let url = URL(string: urlString) else { return }
+        // 谷歌信任模式：跳过谷歌域名DNS预解析（主动预解析属于自动化特征）
+        if googleTrustMode && isGoogleDomain(urlString) { return }
         // 发送一个超时极短的请求触发系统DNS解析并缓存，立即取消不下载数据
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 3)
         request.httpMethod = "HEAD"
@@ -1049,6 +1098,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // MARK: - Pre-Connect TCP预连接
     private func preConnect(for urlString: String) {
         guard let url = URL(string: urlString), let host = url.host else { return }
+        // 谷歌信任模式：跳过谷歌域名TCP预连接
+        if googleTrustMode && isGoogleDomain(urlString) { return }
         let port = url.scheme == "https" ? 443 : 80
         // 使用URLSession streamTask建立TCP/TLS连接，系统会复用连接池
         let task = URLSession.shared.streamTask(withHostName: host, port: port)
@@ -1107,14 +1158,18 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         ])
     }
     private func setupWebViews() {
+        // 共享 processPool 和 dataStore，确保多窗口之间Cookie/会话完全一致（与Safari行为一致）
+        let sharedProcessPool = WKProcessPool()
+        let sharedDataStore = WKWebsiteDataStore.default()
         for i in 0..<windowTitles.count {
             let config = WKWebViewConfiguration()
+            config.processPool = sharedProcessPool
             config.allowsInlineMediaPlayback = true
             // 禁止媒体自动播放（需用户手动点击）
             config.mediaTypesRequiringUserActionForPlayback = .all
             config.defaultWebpagePreferences.allowsContentJavaScript = true
-            // 持久化数据存储（缓存/cookie）
-            config.websiteDataStore = .default()
+            // 持久化数据存储（缓存/cookie）- 所有窗口共享同一个数据存储
+            config.websiteDataStore = sharedDataStore
             // 后台动画节流JS：页面不可见时暂停requestAnimationFrame
             let throttleJS = """
             (function(){var _raf=window.requestAnimationFrame;var rafQueue=[];document.addEventListener('visibilitychange',function(){if(document.hidden){window.requestAnimationFrame=function(cb){rafQueue.push(cb);return rafQueue.length;};}else{window.requestAnimationFrame=_raf;rafQueue.forEach(function(cb){_raf(cb);});rafQueue=[];}});})();
@@ -1144,8 +1199,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
                 webView.bottomAnchor.constraint(equalTo: webViewContainer.bottomAnchor)
             ])
             webView.addObserver(self, forKeyPath: #keyPath(WKWebView.estimatedProgress), options: .new, context: nil)
-            // 应用自定义UA
-            webView.customUserAgent = uaPresets[currentUAIndex]
+            // 应用自定义UA（默认移动端使用与系统版本匹配的标准Safari UA，降低谷歌风控）
+            if currentUAIndex == 0 {
+                webView.customUserAgent = dynamicSafariUA()
+            } else {
+                webView.customUserAgent = uaPresets[currentUAIndex]
+            }
             webViews.append(webView)
             setupCustomRefresh(for: webView, index: i)
         }
@@ -1695,17 +1754,48 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     
     @objc private func edgeMenuClearSiteCache() {
         closeEdgeMenu()
-        if let host = currentWebView.url?.host {
-            fourLevelCache.clearCacheForSite(host)
-            showToast("已清理 \(host) 缓存")
-            currentWebView.reload()
+        guard let host = currentWebView.url?.host else {
+            showToast("当前页面无域名")
+            return
         }
+        // 二次确认：防止误删谷歌Cookie导致人机验证
+        let alert = UIAlertController(title: "清除站点缓存", message: "确定要清除 \(host) 的全部缓存吗？\n\n如果是谷歌相关站点，清除后可能需要重新登录并触发人机验证。", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "确认清除", style: .destructive) { _ in
+            self.fourLevelCache.clearCacheForSite(host)
+            // 同时清除WKWebView站点数据（Cookie/LocalStorage）
+            let dataStore = self.currentWebView.configuration.websiteDataStore
+            dataStore.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { records in
+                let targetRecords = records.filter { $0.displayName.contains(host) || host.contains($0.displayName) }
+                dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: targetRecords, completionHandler: {})
+            }
+            self.showToast("已清理 \(host) 缓存")
+            self.currentWebView.reload()
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
     }
     
     @objc private func edgeMenuClearAllCache() {
         closeEdgeMenu()
-        fourLevelCache.removeAllCachedResponses()
-        showToast("已清空全部缓存")
+        let alert = UIAlertController(title: "清空全部缓存", message: "确定要清空浏览器全部缓存吗？\n\n这将清除所有网站的Cookie、登录状态和离线缓存，谷歌等网站需要重新登录。", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "确认清空", style: .destructive) { _ in
+            self.fourLevelCache.removeAllCachedResponses()
+            // 清除全部WKWebView数据
+            let dataStore = WKWebsiteDataStore.default()
+            dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: Date(timeIntervalSince1970: 0), completionHandler: {})
+            TranslateManager.shared.clearAllTranslationCache()
+            self.showToast("已清空全部缓存")
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
     }
     
     @objc private func edgeMenuShowProxy() {
@@ -2160,6 +2250,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             self.showTranslateModeSelector()
         })
         
+        // 谷歌信任模式（降低人机验证概率）
+        let trustText = googleTrustMode ? "已开启（推荐）" : "已关闭"
+        alert.addAction(UIAlertAction(title: "🛡️ 谷歌信任模式（当前：\(trustText)）", style: .default) { _ in
+            self.showGoogleTrustModeSelector()
+        })
+        
         // 离线缓存配置
         alert.addAction(UIAlertAction(title: "💾 离线缓存配置", style: .default) { _ in
             self.showOfflineCacheSettings()
@@ -2195,6 +2291,30 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         alert.addAction(UIAlertAction(title: "🗑 清空翻译缓存", style: .destructive) { _ in
             TranslateManager.shared.clearAllTranslationCache()
             self.showToast("翻译缓存已清空")
+        })
+        
+        alert.addAction(UIAlertAction(title: "关闭", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+
+    // MARK: - 谷歌信任模式选择
+    private func showGoogleTrustModeSelector() {
+        let alert = UIAlertController(title: "🛡️ 谷歌信任模式", message: "开启后对谷歌家族域名（Google/reCAPTCHA/分析等）豁免广告拦截、TCP预连接和DNS预解析，使用标准Safari UA，大幅降低人机验证概率。\n\n关闭后所有网站统一应用加速和广告拦截策略，适合不需要频繁访问谷歌的场景。", preferredStyle: .actionSheet)
+        
+        alert.addAction(UIAlertAction(title: "✅ 开启谷歌信任模式（推荐）", style: .default) { _ in
+            UserDefaults.standard.set(true, forKey: self.googleTrustModeKey)
+            self.compileAdBlockRules()
+            self.showToast("谷歌信任模式已开启")
+        })
+        
+        alert.addAction(UIAlertAction(title: "❌ 关闭谷歌信任模式", style: .default) { _ in
+            UserDefaults.standard.set(false, forKey: self.googleTrustModeKey)
+            self.compileAdBlockRules()
+            self.showToast("谷歌信任模式已关闭")
         })
         
         alert.addAction(UIAlertAction(title: "关闭", style: .cancel))
