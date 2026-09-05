@@ -1632,7 +1632,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     
     @objc private func edgeMenuSaveOffline() {
         saveCurrentPageOffline()
-        edgeMenuClose()
+        closeEdgeMenu()
     }
 
     @objc private func edgeMenuToggleImageBlock() {
@@ -2155,7 +2155,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         
         // 翻译模式
         let currentMode = TranslateManager.shared.currentMode
-        let modeText = currentMode == .hybrid ? "混合（文字离线+图片在线）" : "传统在线翻译"
+        let modeText = currentMode == .mixed ? "混合（文字离线+图片在线）" : (currentMode == .local ? "本地翻译（仅离线词库）" : "传统在线翻译")
         alert.addAction(UIAlertAction(title: "🌍 翻译模式（当前：\(modeText)）", style: .default) { _ in
             self.showTranslateModeSelector()
         })
@@ -2175,10 +2175,15 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     
     // MARK: - 翻译模式选择
     private func showTranslateModeSelector() {
-        let alert = UIAlertController(title: "选择翻译模式", message: "混合模式：网页文字使用内置离线词库翻译（无需网络），图片使用在线翻译\n传统在线：完全使用原有百度在线翻译", preferredStyle: .actionSheet)
+        let alert = UIAlertController(title: "选择翻译模式", message: "本地翻译：仅使用内置离线词库（无需网络）\n混合翻译：文字优先离线，失败自动降级在线\n在线翻译：完全使用百度在线翻译", preferredStyle: .actionSheet)
+        
+        alert.addAction(UIAlertAction(title: "📱 本地翻译（仅离线词库）", style: .default) { _ in
+            TranslateManager.shared.setMode(.local)
+            self.showToast("已切换为本地翻译模式")
+        })
         
         alert.addAction(UIAlertAction(title: "🔀 混合翻译（推荐）", style: .default) { _ in
-            TranslateManager.shared.setMode(.hybrid)
+            TranslateManager.shared.setMode(.mixed)
             self.showToast("已切换为混合翻译模式")
         })
         
