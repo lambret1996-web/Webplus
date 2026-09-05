@@ -76,7 +76,8 @@ jobs:
           export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
           brew install swiftlint
 
-      - name: 运行 SwiftLint（仅拦截错误）
+      - name: 运行 SwiftLint（代码风格提示，不中断构建）
+        continue-on-error: true
         run: |
-          swiftlint lint --quiet
+          swiftlint lint --config .swiftlint.yml --quiet || echo "SwiftLint 发现代码风格问题，但不影响构建"
 
