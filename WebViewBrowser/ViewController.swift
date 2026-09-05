@@ -37,6 +37,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     private var translateButton: UIButton!
     private var downloadButton: UIButton!
     private var downloadBadge: UILabel!
+    private var saveOfflineButton: UIButton!
     private var confirmBar: UIView?
     private var pendingDownloadURL: String?
     private var pendingDownloadName: String?
@@ -161,6 +162,12 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         loadInitialPages()
         // 预创建下载文件夹，确保在Files App中可见
         createDownloadsFolder()
+        // 四级离线缓存：后台保存/终止兜底/启动补全
+        NotificationCenter.default.addObserver(self, selector: #selector(appDidEnterBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(appWillTerminate), name: UIApplication.willTerminateNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
+        // 打开离线网页（缓存管理页发通知）
+        NotificationCenter.default.addObserver(self, selector: #selector(openOfflinePage(_:)), name: NSNotification.Name("OpenOfflinePage"), object: nil)
         // 下载管理回调
         DownloadManager.shared.onProgress = { [weak self] _ in
             DispatchQueue.main.async { self?.updateDownloadBadge() }
@@ -259,6 +266,17 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         downloadBadge.isHidden = true
         downloadBadge.translatesAutoresizingMaskIntoConstraints = false
         tabBar.addSubview(downloadBadge)
+        // 保存离线按钮（下载按钮左侧）
+        saveOfflineButton = UIButton(type: .system)
+        saveOfflineButton.setTitle("存", for: .normal)
+        saveOfflineButton.titleLabel?.font = .systemFont(ofSize: 10, weight: .bold)
+        saveOfflineButton.setTitleColor(.systemBlue, for: .normal)
+        saveOfflineButton.layer.borderWidth = 1
+        saveOfflineButton.layer.borderColor = UIColor.systemBlue.cgColor
+        saveOfflineButton.layer.cornerRadius = 11
+        saveOfflineButton.translatesAutoresizingMaskIntoConstraints = false
+        saveOfflineButton.addTarget(self, action: #selector(saveCurrentPageOffline), for: .touchUpInside)
+        tabBar.addSubview(saveOfflineButton)
         // 标签按钮（动态创建4个）
         let tabWidth: CGFloat = 50
         let tabFont: CGFloat = 10
@@ -329,6 +347,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             tabButtons[3].centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
             tabButtons[3].widthAnchor.constraint(equalToConstant: tabWidth),
             tabButtons[3].heightAnchor.constraint(equalToConstant: 24),
+            // 保存离线按钮
+            saveOfflineButton.trailingAnchor.constraint(equalTo: downloadButton.leadingAnchor, constant: -3),
+            saveOfflineButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
+            saveOfflineButton.widthAnchor.constraint(equalToConstant: 22),
+            saveOfflineButton.heightAnchor.constraint(equalToConstant: 22),
             // 下载按钮
             downloadButton.trailingAnchor.constraint(equalTo: tabBar.trailingAnchor, constant: -4),
             downloadButton.centerYAnchor.constraint(equalTo: tabBar.centerYAnchor),
@@ -366,7 +389,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             case "DuckDuckGo":
                 searchURLString = "https://duckduckgo.com/?q=\(encoded)"
             default:
-                searchURLString = "https://www.google.com/search?q=\(encoded)"
+                // 兜底搜索引擎：百度
+                searchURLString = "https://www.baidu.com/s?wd=\(encoded)"
             }
             if let searchURL = URL(string: searchURLString) {
                 currentWebView.load(URLRequest(url: searchURL))
@@ -2140,6 +2164,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
             self.setAsDefaultBrowser()
         })
         
+        // 离线缓存配置
+        alert.addAction(UIAlertAction(title: "💾 离线缓存配置", style: .default) { _ in
+            self.showOfflineCacheSettings()
+        })
+        
         alert.addAction(UIAlertAction(title: "关闭", style: .cancel))
         if let popover = alert.popoverPresentationController {
             popover.sourceView = self.view
@@ -2148,6 +2177,84 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         present(alert, animated: true)
     }
     
+    // MARK: - 离线缓存配置菜单
+    private func showOfflineCacheSettings() {
+        let defaults = UserDefaults.standard
+        let autoBG = defaults.object(forKey: "offlineAutoSaveOnBackground") as? Bool ?? true
+        let autoNav = defaults.object(forKey: "offlineAutoSaveOnNavigate") as? Bool ?? false
+        let completeLaunch = defaults.object(forKey: "offlineCompletePendingOnLaunch") as? Bool ?? true
+        let maxItems = defaults.integer(forKey: "offlineMaxAutoItems") > 0 ? defaults.integer(forKey: "offlineMaxAutoItems") : 20
+        let dedupDays = defaults.integer(forKey: "offlineUrlDedupDays") >= 0 ? defaults.integer(forKey: "offlineUrlDedupDays") : 7
+
+        let alert = UIAlertController(title: "💾 离线缓存配置", message: "四级离线网页自动保存设置", preferredStyle: .actionSheet)
+
+        alert.addAction(UIAlertAction(title: "🔛 退出App自动保存当前网页：\(autoBG ? "开启" : "关闭")", style: .default) { _ in
+            let v = !(defaults.object(forKey: "offlineAutoSaveOnBackground") as? Bool ?? true)
+            defaults.set(v, forKey: "offlineAutoSaveOnBackground")
+            self.showToast("已\(v ? "开启" : "关闭")退出自动保存")
+            self.showOfflineCacheSettings()
+        })
+
+        alert.addAction(UIAlertAction(title: "🔁 页面跳转自动保存上一页：\(autoNav ? "开启" : "关闭")", style: .default) { _ in
+            let v = !(defaults.object(forKey: "offlineAutoSaveOnNavigate") as? Bool ?? false)
+            defaults.set(v, forKey: "offlineAutoSaveOnNavigate")
+            self.showToast("已\(v ? "开启" : "关闭")跳转自动保存")
+            self.showOfflineCacheSettings()
+        })
+
+        alert.addAction(UIAlertAction(title: "🚀 启动补全未保存网页：\(completeLaunch ? "开启" : "关闭")", style: .default) { _ in
+            let v = !(defaults.object(forKey: "offlineCompletePendingOnLaunch") as? Bool ?? true)
+            defaults.set(v, forKey: "offlineCompletePendingOnLaunch")
+            self.showToast("已\(v ? "开启" : "关闭")启动补全")
+            self.showOfflineCacheSettings()
+        })
+
+        alert.addAction(UIAlertAction(title: "📦 自动保存上限：\(maxItems)条", style: .default) { _ in
+            let alert2 = UIAlertController(title: "自动保存上限", message: "超过上限自动淘汰最旧的自动保存网页（手动保存不受限）", preferredStyle: .alert)
+            alert2.addTextField { tf in
+                tf.keyboardType = .numberPad
+                tf.text = "\(maxItems)"
+            }
+            alert2.addAction(UIAlertAction(title: "确定", style: .default) { _ in
+                let val = Int(alert2.textFields?.first?.text ?? "") ?? 20
+                defaults.set(val, forKey: "offlineMaxAutoItems")
+                self.showToast("自动保存上限已设为 \(val) 条")
+            })
+            alert2.addAction(UIAlertAction(title: "取消", style: .cancel))
+            self.present(alert2, animated: true)
+        })
+
+        alert.addAction(UIAlertAction(title: "⏱ URL去重周期：\(dedupDays)天", style: .default) { _ in
+            let alert2 = UIAlertController(title: "URL去重周期", message: "相同URL在周期内不重复自动保存，设为0关闭去重", preferredStyle: .alert)
+            alert2.addTextField { tf in
+                tf.keyboardType = .numberPad
+                tf.text = "\(dedupDays)"
+            }
+            alert2.addAction(UIAlertAction(title: "确定", style: .default) { _ in
+                let val = Int(alert2.textFields?.first?.text ?? "") ?? 7
+                defaults.set(val, forKey: "offlineUrlDedupDays")
+                self.showToast("去重周期已设为 \(val) 天")
+            })
+            alert2.addAction(UIAlertAction(title: "取消", style: .cancel))
+            self.present(alert2, animated: true)
+        })
+
+        alert.addAction(UIAlertAction(title: "📋 离线保存日志", style: .default) { _ in
+            let logs = OfflineCacheManager.shared.saveLog()
+            let message = logs.isEmpty ? "暂无保存记录" : logs.joined(separator: "\n")
+            let alert3 = UIAlertController(title: "离线保存日志", message: message, preferredStyle: .alert)
+            alert3.addAction(UIAlertAction(title: "关闭", style: .cancel))
+            self.present(alert3, animated: true)
+        })
+
+        alert.addAction(UIAlertAction(title: "关闭", style: .cancel))
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self.view
+            popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+
     private func setEdgeMenu(open: Bool, duration: TimeInterval = 1.0) {
         edgeMenuIsOpen = open
         let menuWidth = view.bounds.width * 0.50
@@ -2354,14 +2461,67 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
     // MARK: - 四级缓存管理（全屏页面）
     private func showCacheManager() {
         let cacheVC = CacheManagerViewController()
-        cacheVC.modalPresentationStyle = .fullScreen
-        present(cacheVC, animated: true)
+        cacheVC.hidesBottomBarWhenPushed = true
+        navigationController?.pushViewController(cacheVC, animated: true)
     }
     
     // MARK: - 缓存管理（含存储状态）
     // MARK: - 缓存管理（含存储状态）- 已改为全屏页面
     private func showCacheManagerWithStorage() {
         showCacheManager()
+    }
+    
+    // MARK: - 四级离线缓存：App生命周期保存
+    @objc private func appDidEnterBackground() {
+        // 主触发：切后台完整保存当前网页（申请后台任务延长执行时间）
+        var bgTask: UIBackgroundTaskIdentifier = .invalid
+        bgTask = UIApplication.shared.beginBackgroundTask {
+            if bgTask != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTask)
+                bgTask = .invalid
+            }
+        }
+        OfflineCacheManager.shared.saveOnBackground(webView: currentWebView)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 25) {
+            if bgTask != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTask)
+                bgTask = .invalid
+            }
+        }
+    }
+    
+    @objc private func appWillTerminate() {
+        // 兜底：进程终止仅轻量保存URL+标题，完整资源下次启动补全
+        OfflineCacheManager.shared.savePendingOnTerminate(webView: currentWebView)
+    }
+    
+    @objc private func appDidBecomeActive() {
+        // 启动补全：上次关闭未保存完的网页资源
+        OfflineCacheManager.shared.completePendingSaves()
+    }
+    
+    /// 手动保存当前网页到四级离线缓存
+    @objc private func openOfflinePage(_ notification: Notification) {
+        guard let urlString = notification.userInfo?["url"] as? String,
+              let url = URL(string: urlString) else { return }
+        // 在第一个标签页加载离线网页
+        switchToTab(index: 0)
+        currentWebView.load(URLRequest(url: url))
+        updateURLField()
+        showToast("已打开离线网页")
+    }
+    
+    @objc private func saveCurrentPageOffline() {
+        guard let url = currentWebView.url, url.absoluteString.hasPrefix("http") else {
+            showToast("当前页面无法保存")
+            return
+        }
+        showToast("正在保存离线网页...")
+        OfflineCacheManager.shared.saveCurrentPage(webView: currentWebView, saveType: "manual") { [weak self] ok in
+            DispatchQueue.main.async {
+                self?.showToast(ok ? "✅ 已保存到四级离线缓存" : "❌ 保存失败")
+            }
+        }
     }
         
     

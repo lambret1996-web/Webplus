@@ -12,6 +12,9 @@
 
 import UIKit
 
+// 用于给离线条目按钮关联 OfflineItem 对象
+private var offlineItemKey: UInt8 = 0
+
 class CacheManagerViewController: UIViewController {
 
     // MARK: - UI 元素
@@ -70,6 +73,7 @@ class CacheManagerViewController: UIViewController {
 
     private var cacheSizes: [Int64] = [0, 0, 0, 0]
     private var isCleaning = false
+    private var offlineListStack: UIStackView!
 
     // MARK: - 生命周期
     override func viewDidLoad() {
@@ -77,51 +81,13 @@ class CacheManagerViewController: UIViewController {
         view.backgroundColor = UIColor(red: 0.95, green: 0.96, blue: 0.98, alpha: 1.0)
 
         setupUI()
-        setupSwipeGesture()
         refreshCacheData()
     }
 
-    // MARK: - 设置右滑返回手势
-    private func setupSwipeGesture() {
-        let swipeRight = UIPanGestureRecognizer(target: self, action: #selector(handleSwipeRight(_:)))
-        view.addGestureRecognizer(swipeRight)
-    }
-
-    private var swipeStartX: CGFloat = 0
-
-    @objc private func handleSwipeRight(_ gesture: UIPanGestureRecognizer) {
-        let translation = gesture.translation(in: view)
-        let velocity = gesture.velocity(in: view)
-
-        switch gesture.state {
-        case .began:
-            swipeStartX = translation.x
-        case .changed:
-            let deltaX = translation.x - swipeStartX
-            if deltaX > 0 {
-                let progress = min(deltaX / (view.bounds.width * 0.3), 1.0)
-                view.transform = CGAffineTransform(translationX: deltaX, y: 0)
-                view.alpha = 1.0 - progress * 0.3
-            }
-        case .ended:
-            let deltaX = translation.x - swipeStartX
-            let threshold = view.bounds.width * 0.3
-            if deltaX > threshold || velocity.x > 500 {
-                UIView.animate(withDuration: 0.25, animations: {
-                    self.view.transform = CGAffineTransform(translationX: self.view.bounds.width, y: 0)
-                    self.view.alpha = 0
-                }) { _ in
-                    self.dismiss(animated: false)
-                }
-            } else {
-                UIView.animate(withDuration: 0.2) {
-                    self.view.transform = .identity
-                    self.view.alpha = 1.0
-                }
-            }
-        default:
-            break
-        }
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // 每次进入页面刷新设备存储状态（实时更新）
+        refreshCacheData()
     }
 
     // MARK: - 设置UI
@@ -262,6 +228,16 @@ class CacheManagerViewController: UIViewController {
             card.addSubview(cleanButton)
             cacheCleanButtons.append(cleanButton)
 
+            // 四级卡片：离线网页列表容器
+            if i == 3 {
+                let stack = UIStackView()
+                stack.axis = .vertical
+                stack.spacing = 6
+                stack.translatesAutoresizingMaskIntoConstraints = false
+                card.addSubview(stack)
+                offlineListStack = stack
+            }
+
             NSLayoutConstraint.activate([
                 colorBar.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
                 colorBar.topAnchor.constraint(equalTo: card.topAnchor, constant: 14),
@@ -283,6 +259,16 @@ class CacheManagerViewController: UIViewController {
                 cleanButton.widthAnchor.constraint(equalToConstant: 70),
                 cleanButton.heightAnchor.constraint(equalToConstant: 30)
             ])
+
+            // 离线列表约束（仅四级卡片）
+            if i == 3, let stack = offlineListStack {
+                NSLayoutConstraint.activate([
+                    stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+                    stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
+                    stack.topAnchor.constraint(equalTo: descLabel.bottomAnchor, constant: 8),
+                    stack.bottomAnchor.constraint(lessThanOrEqualTo: cleanButton.topAnchor, constant: -8)
+                ])
+            }
         }
 
         // 底部按钮
@@ -458,6 +444,132 @@ class CacheManagerViewController: UIViewController {
         overviewTotalLabel.text = formatSize(total)
         overviewCleanableLabel.text = "🗑 可清理垃圾: \(formatSize(cleanable))"
         overviewValidLabel.text = "✅ 有效保留: \(formatSize(valid))"
+        // 刷新四级离线网页列表
+        rebuildOfflineList()
+    }
+
+    // MARK: - 离线网页列表
+    private func rebuildOfflineList() {
+        guard let stack = offlineListStack else { return }
+        for v in stack.arrangedSubviews {
+            stack.removeArrangedSubview(v)
+            v.removeFromSuperview()
+        }
+        let items = OfflineCacheManager.shared.allItems()
+        if items.isEmpty {
+            let emptyLabel = UILabel()
+            emptyLabel.text = "暂无离线网页\n切后台自动保存 / 点击工具栏「存」手动保存"
+            emptyLabel.font = .systemFont(ofSize: 12)
+            emptyLabel.textColor = .gray
+            emptyLabel.textAlignment = .center
+            emptyLabel.numberOfLines = 0
+            stack.addArrangedSubview(emptyLabel)
+            return
+        }
+        for item in items {
+            stack.addArrangedSubview(makeOfflineRow(item: item))
+        }
+    }
+
+    private func makeOfflineRow(item: OfflineCacheManager.OfflineItem) -> UIView {
+        let row = UIView()
+        row.backgroundColor = UIColor(white: 0.96, alpha: 1.0)
+        row.layer.cornerRadius = 8
+        row.translatesAutoresizingMaskIntoConstraints = false
+
+        // 标题
+        let titleLabel = UILabel()
+        titleLabel.text = item.pageTitle
+        titleLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        titleLabel.textColor = .darkText
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(titleLabel)
+
+        // 来源+时间
+        let metaLabel = UILabel()
+        let typeTag = item.saveType == "manual" ? "手动" : "自动"
+        let statusTag = item.saveStatus == "pending" ? "·待补全" : ""
+        let timeStr = DateFormatter.localizedString(from: Date(timeIntervalSince1970: item.saveTimestamp), dateStyle: .short, timeStyle: .short)
+        metaLabel.text = "[\(typeTag)] \(timeStr)\(statusTag)"
+        metaLabel.font = .systemFont(ofSize: 10)
+        metaLabel.textColor = .gray
+        metaLabel.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(metaLabel)
+
+        // 打开按钮
+        let openButton = UIButton(type: .system)
+        openButton.setTitle("打开", for: .normal)
+        openButton.titleLabel?.font = .systemFont(ofSize: 11, weight: .medium)
+        openButton.setTitleColor(.white, for: .normal)
+        openButton.backgroundColor = UIColor(red: 0.55, green: 0.45, blue: 0.85, alpha: 1.0)
+        openButton.layer.cornerRadius = 6
+        openButton.tag = 0
+        openButton.translatesAutoresizingMaskIntoConstraints = false
+        openButton.addTarget(self, action: #selector(openOfflineItem(_:)), for: .touchUpInside)
+        row.addSubview(openButton)
+        // 存uuid到按钮的关联
+        objc_setAssociatedObject(openButton, &offlineItemKey, item, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+        // 删除按钮
+        let deleteButton = UIButton(type: .system)
+        deleteButton.setTitle("删除", for: .normal)
+        deleteButton.titleLabel?.font = .systemFont(ofSize: 11, weight: .medium)
+        deleteButton.setTitleColor(.white, for: .normal)
+        deleteButton.backgroundColor = UIColor(red: 0.90, green: 0.45, blue: 0.25, alpha: 1.0)
+        deleteButton.layer.cornerRadius = 6
+        deleteButton.translatesAutoresizingMaskIntoConstraints = false
+        deleteButton.addTarget(self, action: #selector(deleteOfflineItem(_:)), for: .touchUpInside)
+        row.addSubview(deleteButton)
+        objc_setAssociatedObject(deleteButton, &offlineItemKey, item, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: row.topAnchor, constant: 8),
+            titleLabel.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 10),
+            titleLabel.trailingAnchor.constraint(equalTo: openButton.leadingAnchor, constant: -8),
+
+            metaLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2),
+            metaLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            metaLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+
+            openButton.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -8),
+            openButton.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            openButton.widthAnchor.constraint(equalToConstant: 42),
+            openButton.heightAnchor.constraint(equalToConstant: 26),
+
+            deleteButton.trailingAnchor.constraint(equalTo: openButton.leadingAnchor, constant: -6),
+            deleteButton.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            deleteButton.widthAnchor.constraint(equalToConstant: 42),
+            deleteButton.heightAnchor.constraint(equalToConstant: 26),
+
+            row.heightAnchor.constraint(equalToConstant: 56),
+            metaLabel.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -6)
+        ])
+        return row
+    }
+
+    // MARK: - 离线网页操作
+    @objc private func openOfflineItem(_ sender: UIButton) {
+        guard let item = objc_getAssociatedObject(sender, &offlineItemKey) as? OfflineCacheManager.OfflineItem,
+              let localURL = OfflineCacheManager.shared.localURL(for: item) else {
+            showToast("离线文件不存在")
+            return
+        }
+        // push 方式打开，返回用 pop；通知主控制器加载本地离线网页
+        navigationController?.popViewController(animated: true)
+        NotificationCenter.default.post(name: NSNotification.Name("OpenOfflinePage"), object: nil, userInfo: ["url": localURL.absoluteString])
+    }
+
+    @objc private func deleteOfflineItem(_ sender: UIButton) {
+        guard let item = objc_getAssociatedObject(sender, &offlineItemKey) as? OfflineCacheManager.OfflineItem else { return }
+        let alert = UIAlertController(title: "删除离线网页", message: "将解除保护并删除：\(item.pageTitle)", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "删除", style: .destructive) { _ in
+            _ = OfflineCacheManager.shared.deleteItem(uuid: item.uuid)
+            self.refreshCacheData()
+            self.showToast("已删除")
+        })
+        present(alert, animated: true)
     }
 
     private func calculateMemoryCacheSize() -> Int64 {
@@ -475,9 +587,7 @@ class CacheManagerViewController: UIViewController {
     }
 
     private func calculateOfflineCacheSize() -> Int64 {
-        let docsDir = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first ?? ""
-        let offlineDir = (docsDir as NSString).appendingPathComponent("offline")
-        return folderSize(atPath: offlineDir)
+        return OfflineCacheManager.shared.totalSize()
     }
 
     private func folderSize(atPath path: String) -> Int64 {
