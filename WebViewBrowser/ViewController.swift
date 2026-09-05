@@ -2326,10 +2326,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         alert.addAction(UIAlertAction(title: "我知道了", style: .default))
         present(alert, animated: true)
     }
-        })
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        present(alert, animated: true)
-    }
     
     // MARK: - 广告拦截开关
     private func toggleAdBlock() {
