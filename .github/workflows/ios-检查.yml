@@ -1,36 +1,36 @@
-name: Manual iOS Syntax & Lint Check
+name: 手动 iOS 语法与代码规范检查
 
-# 修改点：仅保留 workflow_dispatch，实现纯手动触发
+# 仅保留 workflow_dispatch，实现纯手动触发
 on:
   workflow_dispatch:
     inputs:
       # 可选：添加一个输入框，让你手动选择要检查的分支（默认 main）
       branch_to_check:
-        description: 'Branch to checkout (optional)'
+        description: '要检查的分支名称（可选）'
         required: false
         default: 'main'
 
 jobs:
   check-code-quality:
-    name: Build & SwiftLint
+    name: 编译与 SwiftLint 检查
     runs-on: macos-latest
 
     steps:
       # 1. 检出代码
-      - name: Checkout repository
+      - name: 检出代码仓库
         uses: actions/checkout@v4
         with:
           # 如果手动输入了分支，则检出该分支；否则检出默认分支
           ref: ${{ github.event.inputs.branch_to_check || 'main' }}
 
       # 2. 设置 Xcode 环境
-      - name: Select Xcode Version
+      - name: 选择 Xcode 版本
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
-      # 3. 编译检查 (语法错误拦截)
-      - name: Build Project (Syntax Check)
+      # 3. 编译检查（语法错误拦截）
+      - name: 编译项目（语法检查）
         run: |
-          # 自动查找 .xcodeproj 或 .xcworkspace
+          # 自动查找 .xcworkspace 或 .xcodeproj
           if ls *.xcworkspace 1> /dev/null 2>&1; then
             PROJ="*.xcworkspace"
             SCHEME_ARG="-workspace"
@@ -38,12 +38,12 @@ jobs:
             PROJ="*.xcodeproj"
             SCHEME_ARG="-project"
           else
-            echo "Error: No Xcode project or workspace found!"
+            echo "错误：未找到 Xcode 工程文件或工作区文件！"
             exit 1
           fi
 
-          echo "Building $PROJ..."
-          
+          echo "正在编译 $PROJ..."
+
           # 执行编译，仅编译不运行，用于检查语法
           # 注意：如果你的项目有多个 Scheme，可能需要指定 -scheme "WebViewBrowser"
           xcodebuild clean build \
@@ -52,12 +52,13 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO | xcpretty || exit 1
 
-      # 4. SwiftLint 检查 (代码规范)
-      - name: Install SwiftLint
+      # 4. 安装 SwiftLint
+      - name: 安装 SwiftLint
         run: brew install swiftlint
 
-      - name: Run SwiftLint (Errors Only)
+      # 5. SwiftLint 检查（仅拦截错误）
+      - name: 运行 SwiftLint（仅拦截错误）
         run: |
-          # 使用 --strict 模式或者依赖配置文件中的 error 规则
-          # 这里直接运行 lint，如果配置文件里定义了 error 级别违规，swiftlint 会返回非 0 退出码导致 Action 失败
+          # 直接运行 lint，如果配置文件里定义了 error 级别违规，
+          # swiftlint 会返回非 0 退出码，导致 Action 失败
           swiftlint lint --quiet
