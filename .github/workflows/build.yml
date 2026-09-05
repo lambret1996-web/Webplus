@@ -75,16 +75,6 @@ jobs:
           xcodebuild -list -project "${APP_NAME}.xcodeproj"
 
       # ============================================================
-      # 无签名构建（默认，无需证书）
-      # ============================================================
-      - name: Build (Unsigned)
-        if: steps.detect.outputs.has_cert == 'false'
-        run: |
-          xcodebuild \
-            -project "${APP_NAME}.xcodeproj" \
-            -scheme "${SCHEME}" \
-            -configuration "${BUILD_CONFIG}" \
-            -sdk iphoneos \
 
       - name: 自动递增版本号
         run: |
@@ -100,12 +90,24 @@ jobs:
           echo "VERSION=$NEW_VERSION" >> $GITHUB_ENV
           echo "版本号已自动递增到 $NEW_VERSION"
 
+      # ============================================================
+      # 无签名构建（默认，无需证书）
+      # ============================================================
+      - name: Build (Unsigned)
+        if: steps.detect.outputs.has_cert == 'false'
+        run: |
+          xcodebuild \
+            -project "${APP_NAME}.xcodeproj" \
+            -scheme "${SCHEME}" \
+            -configuration "${BUILD_CONFIG}" \
+            -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             ONLY_ACTIVE_ARCH=NO \
             clean build
+
 
       - name: Package IPA (Unsigned)
         if: steps.detect.outputs.has_cert == 'false'
