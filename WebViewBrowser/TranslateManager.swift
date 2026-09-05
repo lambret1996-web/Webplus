@@ -54,6 +54,7 @@ class TranslateManager {
         case local = "local"
         case online = "online"
         case mixed = "mixed"
+        case alwaysOn = "alwaysOn"  // v16.9 一直开启翻译（默认使用离线翻译）
     }
 
     var currentMode: TranslateMode {
@@ -63,6 +64,11 @@ class TranslateManager {
 
     func setMode(_ mode: TranslateMode) {
         UserDefaults.standard.set(mode.rawValue, forKey: "translateMode")
+    }
+
+    // v16.9 是否开启自动翻译（一直开启翻译模式）
+    var isAutoTranslateEnabled: Bool {
+        return currentMode == .alwaysOn
     }
 
     // MARK: - 加载词库

@@ -2466,13 +2466,19 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         let alert = UIAlertController(title: "翻译模式 & 浏览器设置", message: nil, preferredStyle: .actionSheet)
         // 翻译模式切换
         let currentMode = TranslateManager.shared.currentMode
-        let modeNames: [TranslateManager.TranslateMode: String] = [.local: "本地翻译（仅离线词库）", .online: "在线翻译（百度接口）", .mixed: "混合翻译（推荐）"]
-        for mode in [TranslateManager.TranslateMode.local, .online, .mixed] {
+        let modeNames: [TranslateManager.TranslateMode: String] = [.local: "本地翻译（仅离线词库）", .online: "在线翻译（百度接口）", .mixed: "混合翻译（推荐）", .alwaysOn: "一直开启翻译（默认离线）"]
+        for mode in [TranslateManager.TranslateMode.local, .online, .mixed, .alwaysOn] {
             let isSelected = mode == currentMode
             let title = isSelected ? "✓ \(modeNames[mode] ?? "")" : (modeNames[mode] ?? "")
             alert.addAction(UIAlertAction(title: title, style: .default) { _ in
                 TranslateManager.shared.setMode(mode)
                 self.showToast("已切换为：\(modeNames[mode] ?? "")")
+                // v16.9 如果切换到一直开启翻译，立即对当前页面执行翻译
+                if mode == .alwaysOn {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        self.autoTranslateIfNeeded()
+                    }
+                }
             })
         }
         alert.addAction(UIAlertAction(title: "──────────", style: .default, handler: nil))
@@ -3782,6 +3788,23 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         }
     }
     // MARK: - 翻译功能
+    // v16.9 一直开启翻译：页面加载完成后自动执行离线翻译
+    private func autoTranslateIfNeeded() {
+        guard TranslateManager.shared.isAutoTranslateEnabled else { return }
+        guard !isTranslating else { return }
+        let targetWebView = currentWebView
+        let targetIndex = activeIndex
+        guard !isTranslated[targetIndex] else { return }
+        // 延迟0.5秒，等待页面渲染稳定
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+            guard TranslateManager.shared.isAutoTranslateEnabled else { return }
+            guard !self.isTranslating else { return }
+            guard !self.isTranslated[targetIndex] else { return }
+            self.startLocalTranslation()
+        }
+    }
+
     @objc private func translateTapped() {
         guard !isTranslating else { return }
         if isTranslated[activeIndex] {
@@ -3791,7 +3814,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         // 根据翻译模式执行
         let mode = TranslateManager.shared.currentMode
         switch mode {
-        case .local:
+        case .local, .alwaysOn:  // v16.9 一直开启翻译默认使用离线翻译
             startLocalTranslation()
         case .online:
             startTranslation()
@@ -4167,6 +4190,10 @@ class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, UISc
         if let url = webView.url, !url.absoluteString.hasPrefix("about:") {
             let title = webView.title ?? url.absoluteString
             addToHistory(url: url.absoluteString, title: title)
+        }
+        // v16.9 一直开启翻译：页面加载完成后自动翻译
+        if webView === currentWebView {
+            autoTranslateIfNeeded()
         }
     }
     
