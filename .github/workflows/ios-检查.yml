@@ -1,0 +1,63 @@
+name: Manual iOS Syntax & Lint Check
+
+# 修改点：仅保留 workflow_dispatch，实现纯手动触发
+on:
+  workflow_dispatch:
+    inputs:
+      # 可选：添加一个输入框，让你手动选择要检查的分支（默认 main）
+      branch_to_check:
+        description: 'Branch to checkout (optional)'
+        required: false
+        default: 'main'
+
+jobs:
+  check-code-quality:
+    name: Build & SwiftLint
+    runs-on: macos-latest
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # 如果手动输入了分支，则检出该分支；否则检出默认分支
+          ref: ${{ github.event.inputs.branch_to_check || 'main' }}
+
+      # 2. 设置 Xcode 环境
+      - name: Select Xcode Version
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      # 3. 编译检查 (语法错误拦截)
+      - name: Build Project (Syntax Check)
+        run: |
+          # 自动查找 .xcodeproj 或 .xcworkspace
+          if ls *.xcworkspace 1> /dev/null 2>&1; then
+            PROJ="*.xcworkspace"
+            SCHEME_ARG="-workspace"
+          elif ls *.xcodeproj 1> /dev/null 2>&1; then
+            PROJ="*.xcodeproj"
+            SCHEME_ARG="-project"
+          else
+            echo "Error: No Xcode project or workspace found!"
+            exit 1
+          fi
+
+          echo "Building $PROJ..."
+          
+          # 执行编译，仅编译不运行，用于检查语法
+          # 注意：如果你的项目有多个 Scheme，可能需要指定 -scheme "WebViewBrowser"
+          xcodebuild clean build \
+            $SCHEME_ARG $PROJ \
+            -scheme "WebViewBrowser" \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO | xcpretty || exit 1
+
+      # 4. SwiftLint 检查 (代码规范)
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Run SwiftLint (Errors Only)
+        run: |
+          # 使用 --strict 模式或者依赖配置文件中的 error 规则
+          # 这里直接运行 lint，如果配置文件里定义了 error 级别违规，swiftlint 会返回非 0 退出码导致 Action 失败
+          swiftlint lint --quiet
